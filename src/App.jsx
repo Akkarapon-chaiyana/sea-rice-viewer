@@ -136,17 +136,32 @@ function buildSEAFilter() {
   };
 }
 
-function buildBoundaryExpression(collectionExpr, color) {
+// Outline-only boundary: paint width=N pixels on an empty image, then selfMask
+// so interior pixels (value 0) are transparent and only the outline (value 1) renders.
+function buildBoundaryExpression(collectionExpr, lineWidth = 2) {
   return {
     result: '0',
     values: {
       '0': {
         functionInvocationValue: {
-          functionName: 'Collection.draw',
+          functionName: 'Image.selfMask',
           arguments: {
-            collection:  collectionExpr,
-            color:       { constantValue: color },
-            strokeWidth: { constantValue: 2 },
+            image: {
+              functionInvocationValue: {
+                functionName: 'Image.paint',
+                arguments: {
+                  image: {
+                    functionInvocationValue: {
+                      functionName: 'Image.constant',
+                      arguments: { value: { constantValue: 0 } },
+                    },
+                  },
+                  featureCollection: collectionExpr,
+                  color: { constantValue: 1 },
+                  width: { constantValue: lineWidth },
+                },
+              },
+            },
           },
         },
       },
@@ -258,13 +273,14 @@ export default function App() {
       paint: { 'raster-opacity': opacity } });
   }, []);
 
-  // ── Load country boundary from FAO GAUL ──────────────────────────────────
+  // ── Load country boundary from FAO GAUL (outline only, purple) ───────────
   const loadCountryBoundary = useCallback(async (gaulName) => {
     const map = mapRef.current;
     if (!map || !tokenRef.current || !projectRef.current) return;
     try {
       const tileUrl = await fetchGEETileUrl(
-        buildBoundaryExpression(buildCountryFilter(gaulName), 'bf40ff')
+        buildBoundaryExpression(buildCountryFilter(gaulName), 2),
+        { ranges: [{ min: 1, max: 1 }], paletteColors: ['bf40ff'] }
       );
       boundaryTilesRef.current.country = tileUrl;
       if (map.isStyleLoaded()) {
@@ -273,13 +289,14 @@ export default function App() {
     } catch { /* silently ignore */ }
   }, [fetchGEETileUrl, addRasterLayer]);
 
-  // ── Load SEA boundaries from FAO GAUL ────────────────────────────────────
+  // ── Load SEA boundaries from FAO GAUL (outline only, cyan) ───────────────
   const loadSEABoundary = useCallback(async () => {
     const map = mapRef.current;
     if (!map || !tokenRef.current || !projectRef.current) return;
     try {
       const tileUrl = await fetchGEETileUrl(
-        buildBoundaryExpression(buildSEAFilter(), '00ffff')
+        buildBoundaryExpression(buildSEAFilter(), 1),
+        { ranges: [{ min: 1, max: 1 }], paletteColors: ['00ffff'] }
       );
       boundaryTilesRef.current.sea = tileUrl;
       if (map.isStyleLoaded()) {
