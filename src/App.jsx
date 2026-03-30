@@ -299,9 +299,9 @@ export default function App() {
       );
       if (reqId !== boundaryReqRef.current) return;  // a newer request won — discard
       boundaryTilesRef.current.country = tileUrl;
-      if (map.isStyleLoaded()) {
-        addRasterLayer(map, 'boundary-country', 'boundary-layer-country', tileUrl);
-      }
+      addRasterLayer(map, 'boundary-country', 'boundary-layer-country', tileUrl);
+      // Always move to absolute top after adding
+      if (map.getLayer('boundary-layer-country')) map.moveLayer('boundary-layer-country');
     } catch (e) { console.error('Country boundary error:', e.message); }
   }, [fetchGEETileUrl, addRasterLayer]);
 
@@ -315,11 +315,9 @@ export default function App() {
         { ranges: [{ min: 1, max: 1 }], paletteColors: ['00ffff'] }
       );
       boundaryTilesRef.current.sea = tileUrl;
-      if (map.isStyleLoaded()) {
-        addRasterLayer(map, 'boundary-sea', 'boundary-layer-sea', tileUrl);
-        // Keep country boundary on top
-        if (map.getLayer('boundary-layer-country')) map.moveLayer('boundary-layer-country');
-      }
+      addRasterLayer(map, 'boundary-sea', 'boundary-layer-sea', tileUrl);
+      // Keep country boundary on top of SEA boundary
+      if (map.getLayer('boundary-layer-country')) map.moveLayer('boundary-layer-country');
     } catch (e) { console.error('SEA boundary error:', e.message); }
   }, [fetchGEETileUrl, addRasterLayer]);
 
@@ -419,9 +417,10 @@ export default function App() {
 
       addRasterLayer(map, sourceId, layerId, tileUrl, layersRef.current[typeId].opacity);
 
-      // Keep boundary lines on top
-      if (map.getLayer('boundary-layer-sea'))     map.moveLayer('boundary-layer-sea');
-      if (map.getLayer('boundary-layer-country')) map.moveLayer('boundary-layer-country');
+      // Always push boundaries to absolute top after adding any data layer
+      ['boundary-layer-sea', 'boundary-layer-country'].forEach(id => {
+        if (map.getLayer(id)) map.moveLayer(id);
+      });
 
       const next = { enabled: true, opacity: layersRef.current[typeId].opacity,
         loading: false, error: null, mapName: null, tileUrl };
