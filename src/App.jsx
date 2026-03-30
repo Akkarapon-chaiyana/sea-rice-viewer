@@ -136,8 +136,8 @@ function buildExpression(assetPath, gaulName, isBinary) {
           functionInvocationValue: {
             functionName: 'Filter.eq',
             arguments: {
-              name:  { constantValue: 'ADM0_NAME' },
-              value: { constantValue: gaulName },
+              leftField:  { constantValue: 'ADM0_NAME' },
+              rightValue: { constantValue: gaulName },
             },
           },
         },
