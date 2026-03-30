@@ -227,6 +227,7 @@ export default function App() {
         body: JSON.stringify({
           expression: buildExpression(assetPath),
           visualizationOptions: lt.vis,
+          fileFormat: 'AUTO_PNG_JPEG',
         }),
       });
 
