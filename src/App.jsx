@@ -134,7 +134,7 @@ function buildExpression(assetPath, clipGeometry, isBinary) {
           functionName: 'Image.clip',
           arguments: {
             input:    imgExpr,
-            geometry: { constantValue: clipGeometry },
+            geometry: { geometryValue: clipGeometry },
           },
         },
       },
