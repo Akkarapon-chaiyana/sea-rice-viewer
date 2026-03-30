@@ -125,8 +125,16 @@ const PY_SUBDIVIDE =
   `    print(f'    {desc} ...', end=' ', flush=True)\n` +
   `    resp = requests.get(url, stream=True)\n` +
   `    resp.raise_for_status()\n` +
-  `    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:\n` +
-  `        z.extractall(OUTPUT_DIR)\n` +
+  `    data = resp.content\n` +
+  `    # GEE returns a ZIP archive OR a raw GeoTIFF depending on API version\n` +
+  `    if data[:2] == b'PK':                              # ZIP magic bytes\n` +
+  `        with zipfile.ZipFile(io.BytesIO(data)) as z:\n` +
+  `            z.extractall(OUTPUT_DIR)\n` +
+  `    elif data[:2] in (b'II', b'MM'):                  # TIFF little/big-endian\n` +
+  `        path = os.path.join(OUTPUT_DIR, desc + '.tif')\n` +
+  `        with open(path, 'wb') as f: f.write(data)\n` +
+  `    else:\n` +
+  `        raise RuntimeError(f'Unexpected response for {desc}: {data[:120]}')\n` +
   `    print('done')\n\n`;
 
 // Local download — whole country (auto-tiled)
