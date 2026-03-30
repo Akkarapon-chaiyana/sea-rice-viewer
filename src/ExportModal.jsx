@@ -128,8 +128,11 @@ const PY_SUBDIVIDE =
   `    return [[round(west + c*dlon, 4), round(south + r*dlat, 4),\n` +
   `             round(west + (c+1)*dlon, 4), round(south + (r+1)*dlat, 4)]\n` +
   `            for r in range(n) for c in range(n)]\n\n` +
-  `def download_image(img, fpath, region):\n` +
-  `    """Download one GeoTIFF to fpath (handles both ZIP and raw-TIFF responses)."""\n` +
+  `def download_image(img, fpath, region, clear_nodata=False):\n` +
+  `    """Download one GeoTIFF to fpath (handles both ZIP and raw-TIFF responses).\n` +
+  `    clear_nodata=True removes GEE's automatic nodata=0 tag so that 0-valued\n` +
+  `    pixels (e.g. non-rice in binary layers) are not hidden by GIS software.\n` +
+  `    """\n` +
   `    url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
   `                              'region': region, 'format': 'GeoTIFF'})\n` +
   `    print(f'    {os.path.basename(fpath)} ...', end=' ', flush=True)\n` +
@@ -146,11 +149,17 @@ const PY_SUBDIVIDE =
   `        with open(fpath, 'wb') as f: f.write(data)\n` +
   `    else:\n` +
   `        raise RuntimeError(f'Unexpected response for {os.path.basename(fpath)}: {data[:120]}')\n` +
+  `    if clear_nodata:\n` +
+  `        import rasterio\n` +
+  `        with rasterio.open(fpath, 'r+') as ds: ds.nodata = None\n` +
   `    print('done')\n\n` +
-  `def mosaic_subtiles(paths, out_path):\n` +
+  `def mosaic_subtiles(paths, out_path, clear_nodata=False):\n` +
   `    """Merge sub-tile GeoTIFFs into one file, then delete the parts."""\n` +
   `    if len(paths) == 1:\n` +
   `        os.replace(paths[0], out_path)\n` +
+  `        if clear_nodata:\n` +
+  `            import rasterio\n` +
+  `            with rasterio.open(out_path, 'r+') as ds: ds.nodata = None\n` +
   `        return\n` +
   `    try:\n` +
   `        import rasterio\n` +
@@ -160,6 +169,7 @@ const PY_SUBDIVIDE =
   `        profile = srcs[0].profile.copy()\n` +
   `        profile.update({'width': mosaic.shape[2], 'height': mosaic.shape[1],\n` +
   `                        'transform': transform})\n` +
+  `        if clear_nodata: profile['nodata'] = None\n` +
   `        for src in srcs: src.close()\n` +
   `        with rasterio.open(out_path, 'w', **profile) as dst: dst.write(mosaic)\n` +
   `        for p in paths: os.remove(p)\n` +
@@ -198,7 +208,7 @@ function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outpu
       `    fpath    = os.path.join(OUTPUT_DIR, f'${outSuf(l)}_${country}_${year}{suf}.tif')\n` +
       `    print(f'  [{i+1}/{len(TILES)}] {tw},{ts} → {te},{tn}')\n` +
       `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(sub_geom)\n` +
-      `    download_image(img, fpath, sub_geom)`
+      `    download_image(img, fpath, sub_geom${l.extra === 'binary' ? ', clear_nodata=True' : ''})`
     ).join('\n') +
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
@@ -234,10 +244,10 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
       `        region = ee.Geometry.Rectangle([sw, ss, se, sn])\n` +
       `        suf    = f'_s{j:02d}' if len(subs) > 1 else ''\n` +
       `        fpath  = os.path.join(OUTPUT_DIR, f'${outSuf(l)}_${country}_${year}_{tid}{suf}.tif')\n` +
-      `        download_image(img.clip(region), fpath, region)\n` +
+      `        download_image(img.clip(region), fpath, region${l.extra === 'binary' ? ', clear_nodata=True' : ''})\n` +
       `        sub_paths.append(fpath)\n` +
       `    out_path = os.path.join(OUTPUT_DIR, f'${outSuf(l)}_${country}_${year}_{tid}.tif')\n` +
-      `    mosaic_subtiles(sub_paths, out_path)`
+      `    mosaic_subtiles(sub_paths, out_path${l.extra === 'binary' ? ', clear_nodata=True' : ''})`
     ).join('\n') +
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
