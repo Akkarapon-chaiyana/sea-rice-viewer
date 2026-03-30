@@ -248,7 +248,9 @@ export default function App() {
   const seaOnRef   = useRef(false);
   const countryRef = useRef('Thailand');
   // Store boundary tile URLs so they can be restored after basemap switch
-  const boundaryTilesRef = useRef({ country: null, sea: null });
+  const boundaryTilesRef  = useRef({ country: null, sea: null });
+  // Request counter — ensures only the latest country boundary request is applied
+  const boundaryReqRef    = useRef(0);
 
   const [country,     setCountry]     = useState('Thailand');
   const [year,        setYear]        = useState('2021');
@@ -289,11 +291,13 @@ export default function App() {
   const loadCountryBoundary = useCallback(async (gaulName) => {
     const map = mapRef.current;
     if (!map || !tokenRef.current || !projectRef.current) return;
+    const reqId = ++boundaryReqRef.current;   // stamp this request
     try {
       const tileUrl = await fetchGEETileUrl(
         buildBoundaryExpression(buildCountryFilter(gaulName), 2),
         { ranges: [{ min: 1, max: 1 }], paletteColors: ['bf40ff'] }
       );
+      if (reqId !== boundaryReqRef.current) return;  // a newer request won — discard
       boundaryTilesRef.current.country = tileUrl;
       if (map.isStyleLoaded()) {
         addRasterLayer(map, 'boundary-country', 'boundary-layer-country', tileUrl);
