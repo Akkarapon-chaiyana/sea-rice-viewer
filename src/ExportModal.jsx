@@ -100,12 +100,41 @@ function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTil
     `print('  https://code.earthengine.google.com/tasks')\n`;
 }
 
-// Local download — whole country
+// ── Shared helpers injected into every local-download script ─────────────────
+// subdivide_tile splits a bbox into an n×n grid whose sub-tiles each stay
+// below the GEE getDownloadURL limit (≈48 MB).  The maths:
+//   pixels_x = deg_lon × 111320 × cos(lat) / scale_m
+//   pixels_y = deg_lat × 110540            / scale_m
+//   n        = ceil( sqrt(px_x × px_y / MAX_TILE_PX) )
+const PY_SUBDIVIDE =
+  `import math, requests, zipfile, io, os\n\n` +
+  `MAX_TILE_PX = 8_000_000  # ~32 MB float32; GEE thumbnail hard-limit ≈ 48 MB\n\n` +
+  `def subdivide_tile(west, south, east, north, scale_m):\n` +
+  `    cos_lat = math.cos(math.radians((north + south) / 2))\n` +
+  `    px_x    = abs(east  - west)  * 111_320 * cos_lat / scale_m\n` +
+  `    px_y    = abs(north - south) * 110_540            / scale_m\n` +
+  `    n       = max(1, math.ceil(math.sqrt(px_x * px_y / MAX_TILE_PX)))\n` +
+  `    dlat    = (north - south) / n\n` +
+  `    dlon    = (east  - west)  / n\n` +
+  `    return [[round(west + c*dlon, 4), round(south + r*dlat, 4),\n` +
+  `             round(west + (c+1)*dlon, 4), round(south + (r+1)*dlat, 4)]\n` +
+  `            for r in range(n) for c in range(n)]\n\n` +
+  `def download_image(img, desc, region):\n` +
+  `    url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
+  `                              'region': region, 'format': 'GeoTIFF'})\n` +
+  `    print(f'    {desc} ...', end=' ', flush=True)\n` +
+  `    resp = requests.get(url, stream=True)\n` +
+  `    resp.raise_for_status()\n` +
+  `    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:\n` +
+  `        z.extractall(OUTPUT_DIR)\n` +
+  `    print('done')\n\n`;
+
+// Local download — whole country (auto-tiled)
 function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outputDir, projectId }) {
   const dir = outputDir || './sea_rice_output';
   const hdr = scriptHeader('Local Download — Whole Country', country, year, scale, projectId);
   return hdr +
-    `import requests, zipfile, io, os\n\n` +
+    PY_SUBDIVIDE +
     `COUNTRY    = '${country}'\n` +
     `GAUL_NAME  = '${gaulName}'\n` +
     `YEAR       = ${year}\n` +
@@ -115,25 +144,27 @@ function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outpu
     `fc       = (ee.FeatureCollection('FAO/GAUL/2015/level0')\n` +
     `              .filter(ee.Filter.eq('ADM0_NAME', GAUL_NAME)))\n` +
     `geometry = fc.geometry()\n\n` +
-    `def download_image(img, desc, region):\n` +
-    `    url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
-    `                              'region': region, 'format': 'GeoTIFF'})\n` +
-    `    print(f'  Downloading {desc} ...', end=' ', flush=True)\n` +
-    `    resp = requests.get(url, stream=True)\n` +
-    `    resp.raise_for_status()\n` +
-    `    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:\n` +
-    `        z.extractall(OUTPUT_DIR)\n` +
-    `    print('done')\n\n` +
-    `print(f'Downloading ${country} (${year}) at ${scale} m ...')\n` +
+    `# Derive country bbox → subdivide into download-safe tiles\n` +
+    `ring   = fc.geometry().bounds().coordinates().getInfo()[0]\n` +
+    `west   = min(c[0] for c in ring)\n` +
+    `south  = min(c[1] for c in ring)\n` +
+    `east   = max(c[0] for c in ring)\n` +
+    `north  = max(c[1] for c in ring)\n` +
+    `TILES  = subdivide_tile(west, south, east, north, SCALE)\n` +
+    `print(f'${country} (${year}) at ${scale} m — {len(TILES)} download tile(s)')\n` +
     selectedLayers.map(l =>
       `\n# ── ${l.label}\n` +
-      layerImg(l) + `.clip(geometry)\n` +
-      `download_image(img, f'${l.suffix}_${country}_${year}', geometry)`
+      `for i, (tw, ts, te, tn) in enumerate(TILES):\n` +
+      `    sub_geom = ee.Geometry.Rectangle([tw, ts, te, tn]).intersection(geometry)\n` +
+      `    suf      = f'_t{i:03d}' if len(TILES) > 1 else ''\n` +
+      `    print(f'  [{i+1}/{len(TILES)}] {tw},{ts} → {te},{tn}')\n` +
+      `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(sub_geom)\n` +
+      `    download_image(img, f'${l.suffix}_${country}_${year}{suf}', sub_geom)`
     ).join('\n') +
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
 
-// Local download — grid tiles
+// Local download — grid tiles (auto-subdivided per tile)
 function genLocalTiles({ country, year, scale, selectedLayers, outputDir, activeTiles, projectId }) {
   const n   = activeTiles.length;
   const dir = outputDir || './sea_rice_output';
@@ -142,30 +173,27 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
     `    [${t.bbox.join(', ')}],  # ${t.id}`
   ).join('\n');
   return hdr +
-    `import requests, zipfile, io, os\n\n` +
+    PY_SUBDIVIDE +
     `COUNTRY    = '${country}'\n` +
     `YEAR       = ${year}\n` +
     `SCALE      = ${scale}\n` +
     `OUTPUT_DIR = '${dir}'\n\n` +
     `os.makedirs(OUTPUT_DIR, exist_ok=True)\n\n` +
     `TILES = [\n${tilesList}\n]\n\n` +
-    `def download_image(img, desc, region):\n` +
-    `    url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
-    `                              'region': region, 'format': 'GeoTIFF'})\n` +
-    `    print(f'  Downloading {desc} ...', end=' ', flush=True)\n` +
-    `    resp = requests.get(url, stream=True)\n` +
-    `    resp.raise_for_status()\n` +
-    `    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:\n` +
-    `        z.extractall(OUTPUT_DIR)\n` +
-    `    print('done')\n\n` +
-    `print(f'Downloading {len(TILES)} tiles for ${country} (${year}) at ${scale} m ...')\n` +
+    `print(f'${country} (${year}) at ${scale} m — ${n} tile(s) selected')\n` +
     selectedLayers.map(l =>
       `\n# ── ${l.label}\n` +
       `for i, (w, s, e, n) in enumerate(TILES):\n` +
-      `    region = ee.Geometry.Rectangle([w, s, e, n])\n` +
-      `    print(f'  Tile [{i+1}/{len(TILES)}]: [{w},{s} → {e},{n}]')\n` +
-      `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(region)\n` +
-      `    download_image(img, f'${l.suffix}_${country}_${year}_t{i:03d}', region)`
+      `    subs = subdivide_tile(w, s, e, n, SCALE)\n` +
+      `    note = f' → {len(subs)} sub-tiles' if len(subs) > 1 else ''\n` +
+      `    print(f'  Tile [{i+1}/{len(TILES)}] [{w},{s}→{e},{n}]{note}')\n` +
+      `    ` + layerImg(l).replace(/\n/g, '\n    ') + `\n` +
+      `    for j, (sw, ss, se, sn) in enumerate(subs):\n` +
+      `        region = ee.Geometry.Rectangle([sw, ss, se, sn])\n` +
+      `        suf    = f'_s{j:02d}' if len(subs) > 1 else ''\n` +
+      `        download_image(img.clip(region),\n` +
+      `                       f'${l.suffix}_${country}_${year}_t{i:03d}{suf}',\n` +
+      `                       region)`
     ).join('\n') +
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
