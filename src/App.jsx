@@ -117,6 +117,7 @@ function buildCountryFilter(gaulName) {
 }
 
 function buildSEAFilter() {
+  // Filter.or with individual Filter.eq per country — avoids Filter.inList uncertainty
   return {
     functionInvocationValue: {
       functionName: 'Collection.filter',
@@ -124,10 +125,21 @@ function buildSEAFilter() {
         collection: buildGAULTable(),
         filter: {
           functionInvocationValue: {
-            functionName: 'Filter.inList',
+            functionName: 'Filter.or',
             arguments: {
-              leftField:  { constantValue: 'ADM0_NAME' },
-              rightValue: { arrayValue: { values: SEA_GAUL_NAMES.map(n => ({ constantValue: n })) } },
+              filters: {
+                arrayValue: {
+                  values: SEA_GAUL_NAMES.map(name => ({
+                    functionInvocationValue: {
+                      functionName: 'Filter.eq',
+                      arguments: {
+                        leftField:  { constantValue: 'ADM0_NAME' },
+                        rightValue: { constantValue: name },
+                      },
+                    },
+                  })),
+                },
+              },
             },
           },
         },
@@ -286,7 +298,7 @@ export default function App() {
       if (map.isStyleLoaded()) {
         addRasterLayer(map, 'boundary-country', 'boundary-layer-country', tileUrl);
       }
-    } catch { /* silently ignore */ }
+    } catch (e) { console.error('Country boundary error:', e.message); }
   }, [fetchGEETileUrl, addRasterLayer]);
 
   // ── Load SEA boundaries from FAO GAUL (outline only, cyan) ───────────────
@@ -304,7 +316,7 @@ export default function App() {
         // Keep country boundary on top
         if (map.getLayer('boundary-layer-country')) map.moveLayer('boundary-layer-country');
       }
-    } catch { /* silently ignore */ }
+    } catch (e) { console.error('SEA boundary error:', e.message); }
   }, [fetchGEETileUrl, addRasterLayer]);
 
   // ── Map init ──────────────────────────────────────────────────────────────
@@ -476,6 +488,13 @@ export default function App() {
     countryRef.current = val;
     const co = COUNTRIES.find(c => c.label === val);
     if (co && mapRef.current) mapRef.current.flyTo({ center: co.center, zoom: co.zoom, duration: 1200 });
+    // Remove old country boundary immediately so stale boundary is not shown
+    const map = mapRef.current;
+    if (map) {
+      if (map.getLayer('boundary-layer-country')) map.removeLayer('boundary-layer-country');
+      if (map.getSource('boundary-country'))      map.removeSource('boundary-country');
+      boundaryTilesRef.current.country = null;
+    }
     if (co && tokenRef.current) loadCountryBoundary(co.gaul);
     refreshActive(val, year);
   }, [year, refreshActive, loadCountryBoundary]);
