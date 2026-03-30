@@ -759,6 +759,7 @@ export default function App() {
           gaulName={COUNTRIES.find(c => c.label === country)?.gaul ?? country}
           year={year}
           projectId={projectId}
+          bbox={COUNTRIES.find(c => c.label === country)?.bbox}
           onClose={() => setExportOpen(false)}
         />
       )}
