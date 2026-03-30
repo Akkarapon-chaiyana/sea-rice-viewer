@@ -1,5 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 
+// ── Layer / scale options ─────────────────────────────────────────────────────
 const LAYER_OPTIONS = [
   { id: 'Mean',   label: '5-Fold Mean Probability', suffix: 'SEA_Avg',  extra: '' },
   { id: 'Std',    label: 'Standard Deviation',       suffix: 'SEA_Std',  extra: '' },
@@ -9,247 +10,172 @@ const LAYER_OPTIONS = [
 
 const SCALES = [10, 30, 100, 250, 1000];
 
-// ── Tile helpers ──────────────────────────────────────────────────────────────
-function getTileStep(bbox) {
-  const [west, south, east, north] = bbox;
-  const w = east - west, h = north - south;
-  for (const step of [0.5, 1, 2, 3, 5, 10]) {
-    if (Math.ceil(w / step) * Math.ceil(h / step) <= 200) return step;
-  }
-  return 10;
-}
-
-function computeTiles(bbox) {
-  if (!bbox) return [];
-  const [west, south, east, north] = bbox;
-  const step = getTileStep(bbox);
-  const tiles = [];
-  // North → South for display (row 0 = northernmost)
-  const latStart = +(Math.ceil(north / step) * step).toFixed(4);
-  const lonStart = +(Math.floor(west  / step) * step).toFixed(4);
-  let row = 0;
-  for (let lat = latStart; lat - step >= south - 0.0001; lat = +(lat - step).toFixed(4)) {
-    let col = 0;
-    for (let lon = lonStart; lon < east; lon = +(lon + step).toFixed(4)) {
-      tiles.push({
-        id:    `r${row}c${col}`,
-        west:  lon,
-        south: +(lat - step).toFixed(4),
-        east:  +(lon + step).toFixed(4),
-        north: lat,
-        row, col,
-      });
-      col++;
-    }
-    row++;
-  }
-  return tiles;
-}
-
-function getGridCols(tiles) {
-  if (!tiles.length) return 1;
-  return Math.max(...tiles.map(t => t.col)) + 1;
-}
-
-// ── Script generators ─────────────────────────────────────────────────────────
-function layerExportBlock(l, regionVar, descSuffix = '') {
-  const mask = l.extra === 'binary' ? '.gte(50).selfMask()' : '';
+// ── Script helpers ────────────────────────────────────────────────────────────
+function scriptHeader(mode, country, year, scale) {
   return (
-    `# ── ${l.label}\n` +
-    `asset = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'\n` +
-    `img   = ee.Image(asset)${mask}.clip(${regionVar})\n` +
-    `desc  = f'${l.suffix}_{"{COUNTRY.lower()}"}_{"{YEAR}"}${descSuffix}'`
-  );
-}
-
-function driveTaskBlock(l, regionVar, descSuffix = '') {
-  return (
-    layerExportBlock(l, regionVar, descSuffix) + '\n' +
-    `task  = ee.batch.Export.image.toDrive(\n` +
-    `    image          = img,\n` +
-    `    description    = desc,\n` +
-    `    folder         = OUTPUT_FOLDER,\n` +
-    `    fileNamePrefix = desc,\n` +
-    `    region         = ${regionVar},\n` +
-    `    scale          = SCALE,\n` +
-    `    crs            = 'EPSG:4326',\n` +
-    `    maxPixels      = 1e13,\n` +
-    `    fileFormat     = 'GeoTIFF',\n` +
-    `)\n` +
-    `task.start()\n` +
-    `print(f'  Started: {desc}  [{task.id}]')`
-  );
-}
-
-function genDriveCountry({ country, gaulName, year, scale, folder, selectedLayers, projectId }) {
-  const header = scriptHeader('Google Drive — Whole Country', country, year, scale, projectId);
-  const body = [
-    `COUNTRY       = '${country}'`,
-    `GAUL_NAME     = '${gaulName}'`,
-    `YEAR          = ${year}`,
-    `SCALE         = ${scale}`,
-    `OUTPUT_FOLDER = '${folder}'`,
-    `ASSET_PREFIX  = 'projects/tony-1122/assets/NIE/rice'`,
-    ``,
-    `fc       = (ee.FeatureCollection('FAO/GAUL/2015/level0')`,
-    `              .filter(ee.Filter.eq('ADM0_NAME', GAUL_NAME)))`,
-    `geometry = fc.geometry()`,
-    ``,
-    `print(f'Exporting {COUNTRY} ({YEAR}) at {SCALE} m ...')`,
-    ``,
-    ...selectedLayers.map(l => driveTaskBlock(l, 'geometry') + '\n'),
-    `print(f'\\nAll tasks submitted. Monitor at:')`,
-    `print('  https://code.earthengine.google.com/tasks')`,
-  ].join('\n');
-  return header + body;
-}
-
-function genDriveTiles({ country, year, scale, folder, selectedLayers, projectId, activeTiles }) {
-  const header = scriptHeader(`Google Drive — ${activeTiles.length} Tiles`, country, year, scale, projectId);
-  const tilesStr = `[\n` + activeTiles.map(t =>
-    `    [${t.west}, ${t.south}, ${t.east}, ${t.north}],`
-  ).join('\n') + `\n]`;
-
-  const body = [
-    `COUNTRY       = '${country}'`,
-    `YEAR          = ${year}`,
-    `SCALE         = ${scale}`,
-    `OUTPUT_FOLDER = '${folder}'`,
-    `ASSET_PREFIX  = 'projects/tony-1122/assets/NIE/rice'`,
-    ``,
-    `TILES = ${tilesStr}`,
-    ``,
-    `print(f'Submitting {len(TILES)} tile exports for {COUNTRY} ({YEAR}) at {SCALE} m ...')`,
-    ``,
-    ...selectedLayers.map(l =>
-      `# ── ${l.label}\n` +
-      `for i, (w, s, e, n) in enumerate(TILES):\n` +
-      `    region = ee.Geometry.Rectangle([w, s, e, n])\n` +
-      `    asset  = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'\n` +
-      (l.extra === 'binary'
-        ? `    img    = ee.Image(asset).gte(50).selfMask().clip(region)\n`
-        : `    img    = ee.Image(asset).clip(region)\n`) +
-      `    desc   = f'${l.suffix}_{"{COUNTRY.lower()}"}_{"{YEAR}"}_t{"{i:03d}"}_[{"{w}"},{"{s}"}]'\n` +
-      `    task   = ee.batch.Export.image.toDrive(\n` +
-      `        image=img, description=desc, folder=OUTPUT_FOLDER,\n` +
-      `        fileNamePrefix=desc, region=region, scale=SCALE,\n` +
-      `        crs='EPSG:4326', maxPixels=1e13, fileFormat='GeoTIFF',\n` +
-      `    )\n` +
-      `    task.start()\n` +
-      `    print(f'  [{"{i+1}"}/{"{len(TILES)}"}] {desc}  [{"{task.id}"}]')\n`
-    ),
-    `print(f'\\nAll tasks submitted. Monitor at:')`,
-    `print('  https://code.earthengine.google.com/tasks')`,
-  ].join('\n');
-  return header + body;
-}
-
-function genLocalCountry({ country, gaulName, year, scale, selectedLayers, projectId, outputDir }) {
-  const header = scriptHeader('Local Download — Whole Country', country, year, scale, projectId);
-  const dir = outputDir || './sea_rice_output';
-  const body = [
-    `import requests, zipfile, io, os`,
-    ``,
-    `COUNTRY      = '${country}'`,
-    `GAUL_NAME    = '${gaulName}'`,
-    `YEAR         = ${year}`,
-    `SCALE        = ${scale}`,
-    `OUTPUT_DIR   = '${dir}'`,
-    `ASSET_PREFIX = 'projects/tony-1122/assets/NIE/rice'`,
-    ``,
-    `os.makedirs(OUTPUT_DIR, exist_ok=True)`,
-    ``,
-    `fc       = (ee.FeatureCollection('FAO/GAUL/2015/level0')`,
-    `              .filter(ee.Filter.eq('ADM0_NAME', GAUL_NAME)))`,
-    `geometry = fc.geometry()`,
-    ``,
-    `def download_image(img, desc, region):`,
-    `    url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',`,
-    `                              'region': region, 'format': 'GeoTIFF'})`,
-    `    print(f'  Downloading {desc} ...', end=' ', flush=True)`,
-    `    resp = requests.get(url, stream=True)`,
-    `    resp.raise_for_status()`,
-    `    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:`,
-    `        z.extractall(OUTPUT_DIR)`,
-    `    print('done')`,
-    ``,
-    `print(f'Downloading {COUNTRY} ({YEAR}) at {SCALE} m ...')`,
-    ``,
-    ...selectedLayers.map(l =>
-      `# ── ${l.label}\n` +
-      `asset = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'\n` +
-      `img   = ee.Image(asset)${l.extra === 'binary' ? '.gte(50).selfMask()' : ''}.clip(geometry)\n` +
-      `download_image(img, f'${l.suffix}_{"{COUNTRY.lower()}"}_{"{YEAR}"}', geometry)\n`
-    ),
-    `print(f'\\nDone. Files saved to: {OUTPUT_DIR}/')`,
-  ].join('\n');
-  return header.replace('import ee\n', 'import ee\n') + body;
-}
-
-function genLocalTiles({ country, year, scale, selectedLayers, projectId, outputDir, activeTiles }) {
-  const header = scriptHeader(`Local Download — ${activeTiles.length} Tiles`, country, year, scale, projectId);
-  const dir = outputDir || './sea_rice_output';
-  const tilesStr = `[\n` + activeTiles.map(t =>
-    `    [${t.west}, ${t.south}, ${t.east}, ${t.north}],`
-  ).join('\n') + `\n]`;
-
-  const body = [
-    `import requests, zipfile, io, os`,
-    ``,
-    `COUNTRY      = '${country}'`,
-    `YEAR         = ${year}`,
-    `SCALE        = ${scale}`,
-    `OUTPUT_DIR   = '${dir}'`,
-    `ASSET_PREFIX = 'projects/tony-1122/assets/NIE/rice'`,
-    ``,
-    `os.makedirs(OUTPUT_DIR, exist_ok=True)`,
-    ``,
-    `TILES = ${tilesStr}`,
-    ``,
-    `def download_image(img, desc, region):`,
-    `    url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',`,
-    `                              'region': region, 'format': 'GeoTIFF'})`,
-    `    print(f'  Downloading {desc} ...', end=' ', flush=True)`,
-    `    resp = requests.get(url, stream=True)`,
-    `    resp.raise_for_status()`,
-    `    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:`,
-    `        z.extractall(OUTPUT_DIR)`,
-    `    print('done')`,
-    ``,
-    `print(f'Downloading {activeTiles.length} tiles for {"{COUNTRY}"} ({"{YEAR}"}) at {scale} m ...')`,
-    ``,
-    ...selectedLayers.map(l =>
-      `# ── ${l.label}\n` +
-      `for i, (w, s, e, n) in enumerate(TILES):\n` +
-      `    region = ee.Geometry.Rectangle([w, s, e, n])\n` +
-      `    print(f'  Tile [{"{i+1}"}/{activeTiles.length}]: [{"{w}"},{"{s}"} → {"{e}"},{"{n}"}]')\n` +
-      `    asset  = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'\n` +
-      (l.extra === 'binary'
-        ? `    img    = ee.Image(asset).gte(50).selfMask().clip(region)\n`
-        : `    img    = ee.Image(asset).clip(region)\n`) +
-      `    download_image(img, f'${l.suffix}_{"{COUNTRY.lower()}"}_{"{YEAR}"}_t{"{i:03d}"}', region)\n`
-    ),
-    `print(f'\\nDone. Files saved to: {OUTPUT_DIR}/')`,
-  ].join('\n');
-  return header + body;
-}
-
-function scriptHeader(mode, country, year, scale, projectId) {
-  return (
-    `#!/usr/bin/env python3\n` +
-    `"""\nSEA Rice Viewer — Export Script\n` +
+    '#!/usr/bin/env python3\n' +
+    '"""\n' +
+    'SEA Rice Viewer — Export Script\n' +
     `Mode    : ${mode}\n` +
     `Country : ${country}\n` +
     `Year    : ${year}\n` +
-    `Scale   : ${scale} m\n"""\n` +
-    `import ee\n\n` +
-    `ee.Authenticate()\n` +
-    `ee.Initialize(project='${projectId || 'YOUR_GCP_PROJECT_ID'}')\n\n`
+    `Scale   : ${scale} m\n` +
+    '"""\n' +
+    'import ee\n\n' +
+    '# ── Set your GCP project ID (obtained after ee.Authenticate) ─────────────\n' +
+    "GCP_PROJECT  = 'your-gcp-project-id'  # <-- change this\n" +
+    'ASSET_PREFIX = \'projects/tony-1122/assets/NIE/rice\'\n\n' +
+    'ee.Authenticate()\n' +
+    'ee.Initialize(project=GCP_PROJECT)\n\n'
   );
 }
 
+function layerImg(l) {
+  const mask = l.extra === 'binary' ? '.gte(50).selfMask()' : '';
+  return (
+    `asset = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'\n` +
+    `img   = ee.Image(asset)${mask}`
+  );
+}
+
+// Google Drive — whole country
+function genDriveCountry({ country, gaulName, year, scale, folder, selectedLayers }) {
+  const hdr = scriptHeader('Google Drive — Whole Country', country, year, scale);
+  return hdr +
+    `COUNTRY       = '${country}'\n` +
+    `GAUL_NAME     = '${gaulName}'\n` +
+    `YEAR          = ${year}\n` +
+    `SCALE         = ${scale}\n` +
+    `OUTPUT_FOLDER = '${folder}'\n\n` +
+    `fc       = (ee.FeatureCollection('FAO/GAUL/2015/level0')\n` +
+    `              .filter(ee.Filter.eq('ADM0_NAME', GAUL_NAME)))\n` +
+    `geometry = fc.geometry()\n\n` +
+    `print(f'Exporting {country} ({year}) at {scale} m ...')\n` +
+    selectedLayers.map(l =>
+      `\n# ── ${l.label}\n` +
+      layerImg(l) + `.clip(geometry)\n` +
+      `desc  = f'${l.suffix}_{country}_{year}'\n` +
+      `task  = ee.batch.Export.image.toDrive(\n` +
+      `    image=img, description=desc, folder=OUTPUT_FOLDER,\n` +
+      `    fileNamePrefix=desc, region=geometry,\n` +
+      `    scale=SCALE, crs='EPSG:4326', maxPixels=1e13, fileFormat='GeoTIFF',\n` +
+      `)\n` +
+      `task.start()\n` +
+      `print(f'  Started: {desc}  [{"{task.id}"}]')`
+    ).join('\n') +
+    `\n\nprint('\\nAll tasks submitted. Monitor at:')\n` +
+    `print('  https://code.earthengine.google.com/tasks')\n`;
+}
+
+// Google Drive — grid tiles
+function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTiles }) {
+  const n   = activeTiles.length;
+  const hdr = scriptHeader(`Google Drive — ${n} Tiles`, country, year, scale);
+  const tilesList = activeTiles.map(t =>
+    `    [${t.west}, ${t.south}, ${t.east}, ${t.north}],`
+  ).join('\n');
+  return hdr +
+    `COUNTRY       = '${country}'\n` +
+    `YEAR          = ${year}\n` +
+    `SCALE         = ${scale}\n` +
+    `OUTPUT_FOLDER = '${folder}'\n\n` +
+    `TILES = [\n${tilesList}\n]\n\n` +
+    `print(f'Submitting {len(TILES)} tile exports for ${country} ({year}) at ${scale} m ...')\n` +
+    selectedLayers.map(l =>
+      `\n# ── ${l.label}\n` +
+      `for i, (w, s, e, n) in enumerate(TILES):\n` +
+      `    region = ee.Geometry.Rectangle([w, s, e, n])\n` +
+      `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(region)\n` +
+      `    desc   = f'${l.suffix}_${country}_${year}_t{i:03d}'\n` +
+      `    task   = ee.batch.Export.image.toDrive(\n` +
+      `        image=img, description=desc, folder=OUTPUT_FOLDER,\n` +
+      `        fileNamePrefix=desc, region=region,\n` +
+      `        scale=SCALE, crs='EPSG:4326', maxPixels=1e13, fileFormat='GeoTIFF',\n` +
+      `    )\n` +
+      `    task.start()\n` +
+      `    print(f'  [{i+1}/{len(TILES)}] {desc}  [{"{task.id}"}]')`
+    ).join('\n') +
+    `\n\nprint('\\nAll tasks submitted. Monitor at:')\n` +
+    `print('  https://code.earthengine.google.com/tasks')\n`;
+}
+
+// Local download — whole country
+function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outputDir }) {
+  const dir = outputDir || './sea_rice_output';
+  const hdr = scriptHeader('Local Download — Whole Country', country, year, scale);
+  return hdr +
+    `import requests, zipfile, io, os\n\n` +
+    `COUNTRY    = '${country}'\n` +
+    `GAUL_NAME  = '${gaulName}'\n` +
+    `YEAR       = ${year}\n` +
+    `SCALE      = ${scale}\n` +
+    `OUTPUT_DIR = '${dir}'\n\n` +
+    `os.makedirs(OUTPUT_DIR, exist_ok=True)\n\n` +
+    `fc       = (ee.FeatureCollection('FAO/GAUL/2015/level0')\n` +
+    `              .filter(ee.Filter.eq('ADM0_NAME', GAUL_NAME)))\n` +
+    `geometry = fc.geometry()\n\n` +
+    `def download_image(img, desc, region):\n` +
+    `    url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
+    `                              'region': region, 'format': 'GeoTIFF'})\n` +
+    `    print(f'  Downloading {desc} ...', end=' ', flush=True)\n` +
+    `    resp = requests.get(url, stream=True)\n` +
+    `    resp.raise_for_status()\n` +
+    `    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:\n` +
+    `        z.extractall(OUTPUT_DIR)\n` +
+    `    print('done')\n\n` +
+    `print(f'Downloading ${country} (${year}) at ${scale} m ...')\n` +
+    selectedLayers.map(l =>
+      `\n# ── ${l.label}\n` +
+      layerImg(l) + `.clip(geometry)\n` +
+      `download_image(img, f'${l.suffix}_${country}_${year}', geometry)`
+    ).join('\n') +
+    `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
+}
+
+// Local download — grid tiles
+function genLocalTiles({ country, year, scale, selectedLayers, outputDir, activeTiles }) {
+  const n   = activeTiles.length;
+  const dir = outputDir || './sea_rice_output';
+  const hdr = scriptHeader(`Local Download — ${n} Tiles`, country, year, scale);
+  const tilesList = activeTiles.map(t =>
+    `    [${t.west}, ${t.south}, ${t.east}, ${t.north}],`
+  ).join('\n');
+  return hdr +
+    `import requests, zipfile, io, os\n\n` +
+    `COUNTRY    = '${country}'\n` +
+    `YEAR       = ${year}\n` +
+    `SCALE      = ${scale}\n` +
+    `OUTPUT_DIR = '${dir}'\n\n` +
+    `os.makedirs(OUTPUT_DIR, exist_ok=True)\n\n` +
+    `TILES = [\n${tilesList}\n]\n\n` +
+    `def download_image(img, desc, region):\n` +
+    `    url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
+    `                              'region': region, 'format': 'GeoTIFF'})\n` +
+    `    print(f'  Downloading {desc} ...', end=' ', flush=True)\n` +
+    `    resp = requests.get(url, stream=True)\n` +
+    `    resp.raise_for_status()\n` +
+    `    with zipfile.ZipFile(io.BytesIO(resp.content)) as z:\n` +
+    `        z.extractall(OUTPUT_DIR)\n` +
+    `    print('done')\n\n` +
+    `print(f'Downloading {len(TILES)} tiles for ${country} (${year}) at ${scale} m ...')\n` +
+    selectedLayers.map(l =>
+      `\n# ── ${l.label}\n` +
+      `for i, (w, s, e, n) in enumerate(TILES):\n` +
+      `    region = ee.Geometry.Rectangle([w, s, e, n])\n` +
+      `    print(f'  Tile [{i+1}/{len(TILES)}]: [{w},{s} → {e},{n}]')\n` +
+      `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(region)\n` +
+      `    download_image(img, f'${l.suffix}_${country}_${year}_t{i:03d}', region)`
+    ).join('\n') +
+    `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function ExportModal({ country, gaulName, year, projectId, bbox, onClose }) {
+export default function ExportModal({
+  country, gaulName, year,
+  tiles, selectedTiles, tileSelectActive,
+  onTileSelectToggle, onSelectAllTiles, onSelectNoTiles,
+  onClose,
+}) {
   const [selected,     setSelected]     = useState({ Mean: true, Std: false, Binary: false, Pseudo: false });
   const [scale,        setScale]        = useState(30);
   const [exportTarget, setExportTarget] = useState('country'); // 'country' | 'tiles'
@@ -258,37 +184,33 @@ export default function ExportModal({ country, gaulName, year, projectId, bbox, 
   const [outputDir,    setOutputDir]    = useState('./sea_rice_output');
   const [copied,       setCopied]       = useState(false);
 
-  // Compute tile grid from bbox
-  const tiles      = useMemo(() => computeTiles(bbox), [bbox]);
-  const gridCols   = useMemo(() => getGridCols(tiles), [tiles]);
-  const tileStep   = useMemo(() => bbox ? getTileStep(bbox) : 1, [bbox]);
+  // Deactivate tile select when switching away from tiles mode
+  const handleExportTarget = useCallback((val) => {
+    setExportTarget(val);
+    if (val !== 'tiles' && tileSelectActive) onTileSelectToggle(false);
+  }, [tileSelectActive, onTileSelectToggle]);
 
-  const [selectedTiles, setSelectedTiles] = useState(() => new Set(tiles.map(t => t.id)));
-
-  const toggleTile = useCallback((id) => {
-    setSelectedTiles(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const selectAll  = useCallback(() => setSelectedTiles(new Set(tiles.map(t => t.id))), [tiles]);
-  const selectNone = useCallback(() => setSelectedTiles(new Set()), []);
+  // Deactivate tile select + close
+  const handleClose = useCallback(() => {
+    if (tileSelectActive) onTileSelectToggle(false);
+    onClose();
+  }, [tileSelectActive, onTileSelectToggle, onClose]);
 
   const selectedLayers = LAYER_OPTIONS.filter(l => selected[l.id]);
-  const activeTiles    = tiles.filter(t => selectedTiles.has(t.id));
+  const activeTiles    = (tiles || []).filter(t => selectedTiles?.has(t.id));
+  const totalTiles     = (tiles || []).length;
 
   const script = useMemo(() => {
-    const args = { country, gaulName, year, scale, folder, selectedLayers, projectId, outputDir, activeTiles };
+    const args = { country, gaulName, year, scale, folder, outputDir, selectedLayers, activeTiles };
     if (exportTarget === 'country') {
       return exportDest === 'drive' ? genDriveCountry(args) : genLocalCountry(args);
     } else {
-      return exportDest === 'drive' ? genDriveTiles(args) : genLocalTiles(args);
+      return exportDest === 'drive' ? genDriveTiles(args)   : genLocalTiles(args);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [country, gaulName, year, scale, folder, projectId, outputDir, exportTarget, exportDest,
-      JSON.stringify(selectedLayers), activeTiles.length, JSON.stringify(activeTiles.map(t => t.id))]);
+  }, [country, gaulName, year, scale, folder, outputDir, exportTarget, exportDest,
+      JSON.stringify(selectedLayers.map(l => l.id)),
+      activeTiles.length, JSON.stringify(activeTiles.map(t => t.id))]);
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(script).then(() => {
@@ -308,13 +230,13 @@ export default function ExportModal({ country, gaulName, year, projectId, bbox, 
   }, [script, country, year]);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={handleClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
 
         {/* Title bar */}
         <div className="modal-titlebar">
           <div className="modal-traffic">
-            <span className="modal-dot red"   onClick={onClose} />
+            <span className="modal-dot red"   onClick={handleClose} />
             <span className="modal-dot yellow" />
             <span className="modal-dot green"  />
           </div>
@@ -351,59 +273,54 @@ export default function ExportModal({ country, gaulName, year, projectId, bbox, 
             </div>
           </div>
 
-          {/* Export target */}
+          {/* Export area */}
           <div className="modal-section">
             <div className="modal-label">Export area</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               {[['country', 'Whole Country'], ['tiles', 'Grid Tiles']].map(([val, lbl]) => (
                 <button key={val}
                   className={`scale-btn ${exportTarget === val ? 'active' : ''}`}
-                  onClick={() => setExportTarget(val)}>
+                  onClick={() => handleExportTarget(val)}>
                   {lbl}
                 </button>
               ))}
             </div>
 
             {exportTarget === 'tiles' && (
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-                  <span style={{ fontSize: 10, color: '#888899' }}>
-                    Tile size: {tileStep}° × {tileStep}° · {activeTiles.length}/{tiles.length} selected
+              <div style={{ background: '#0d0d1f', border: '1px solid #2a2a4a', borderRadius: 6, padding: '10px 12px' }}>
+                {/* Tile count row */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, color: '#aaaacc' }}>
+                    <span style={{ color: '#7b8cde', fontWeight: 600, fontSize: 14 }}>{activeTiles.length}</span>
+                    <span style={{ color: '#666688' }}> / {totalTiles} tiles selected</span>
                   </span>
                   <div style={{ display: 'flex', gap: 5 }}>
-                    <button className="scale-btn" style={{ padding: '2px 8px', fontSize: 10 }} onClick={selectAll}>All</button>
-                    <button className="scale-btn" style={{ padding: '2px 8px', fontSize: 10 }} onClick={selectNone}>None</button>
+                    <button className="scale-btn" style={{ padding: '2px 10px', fontSize: 10 }}
+                      onClick={onSelectAllTiles}>All</button>
+                    <button className="scale-btn" style={{ padding: '2px 10px', fontSize: 10 }}
+                      onClick={onSelectNoTiles}>None</button>
                   </div>
                 </div>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: `repeat(${gridCols}, 1fr)`,
-                  gap: 2,
-                  maxHeight: 130,
-                  overflowY: 'auto',
-                  padding: 4,
-                  background: '#0d0d1f',
-                  borderRadius: 5,
-                  border: '1px solid #2a2a4a',
-                }}>
-                  {tiles.map(tile => (
-                    <div
-                      key={tile.id}
-                      title={`${tile.west.toFixed(1)}–${tile.east.toFixed(1)}°E, ${tile.south.toFixed(1)}–${tile.north.toFixed(1)}°N`}
-                      onClick={() => toggleTile(tile.id)}
-                      style={{
-                        height: 14,
-                        background: selectedTiles.has(tile.id) ? '#7b8cde' : '#2a2a4a',
-                        border: '1px solid #1a1a3a',
-                        cursor: 'pointer',
-                        borderRadius: 2,
-                        transition: 'background 0.1s',
-                      }}
-                    />
-                  ))}
-                </div>
-                {activeTiles.length === 0 && (
-                  <div className="auth-status error" style={{ marginTop: 5 }}>Select at least one tile.</div>
+
+                {/* Map select toggle */}
+                <button
+                  className={`btn ${tileSelectActive ? 'btn-sign-in signed-in' : 'btn-export'}`}
+                  style={{ width: '100%', marginBottom: 6 }}
+                  onClick={() => onTileSelectToggle(!tileSelectActive)}>
+                  {tileSelectActive
+                    ? '✓ Selecting on map — click to finish'
+                    : '🗺 Click tiles on map to select / deselect'}
+                </button>
+
+                {tileSelectActive && (
+                  <div style={{ fontSize: 10, color: '#7b8cde', lineHeight: 1.4 }}>
+                    Blue tiles = selected for export. Click any tile to toggle. Enable the
+                    50 km grid overlay to see tile boundaries clearly.
+                  </div>
+                )}
+
+                {activeTiles.length === 0 && !tileSelectActive && (
+                  <div className="auth-status error">No tiles selected — nothing will be exported.</div>
                 )}
               </div>
             )}
@@ -413,7 +330,7 @@ export default function ExportModal({ country, gaulName, year, projectId, bbox, 
           <div className="modal-section">
             <div className="modal-label">Export destination</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-              {[['drive', 'Google Drive'], ['local', 'Local Download']].map(([val, lbl]) => (
+              {[['drive', '☁ Google Drive'], ['local', '💾 Local Download']].map(([val, lbl]) => (
                 <button key={val}
                   className={`scale-btn ${exportDest === val ? 'active' : ''}`}
                   onClick={() => setExportDest(val)}>
@@ -424,17 +341,16 @@ export default function ExportModal({ country, gaulName, year, projectId, bbox, 
             {exportDest === 'drive' && (
               <input className="input" value={folder}
                 onChange={e => setFolder(e.target.value)}
-                placeholder="sea_rice_export"
-                style={{ marginTop: 2 }} />
+                placeholder="sea_rice_export" />
             )}
             {exportDest === 'local' && (
               <>
                 <input className="input" value={outputDir}
                   onChange={e => setOutputDir(e.target.value)}
-                  placeholder="./sea_rice_output"
-                  style={{ marginTop: 2 }} />
-                <div style={{ fontSize: 10, color: '#7b8cde', marginTop: 4, lineHeight: 1.4 }}>
-                  Uses <code style={{ background: '#1a1a32', padding: '1px 4px', borderRadius: 3 }}>getDownloadURL()</code> — works for tiles up to ~100 MB each. For large areas use Google Drive.
+                  placeholder="./sea_rice_output" />
+                <div style={{ fontSize: 10, color: '#7b8cde', marginTop: 4, lineHeight: 1.5 }}>
+                  Uses <code style={{ background: '#1a1a32', padding: '1px 4px', borderRadius: 3 }}>getDownloadURL()</code>
+                  — direct download to local disk. Suitable for tiles up to ~100 MB. For large areas use Drive.
                 </div>
               </>
             )}

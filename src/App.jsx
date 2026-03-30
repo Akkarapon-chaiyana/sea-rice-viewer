@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import maplibregl from 'maplibre-gl';
 import './App.css';
 import ExportModal from './ExportModal';
@@ -31,6 +31,40 @@ function generate50kmGrid([west, south, east, north]) {
   for (let lat = Math.floor(south / s) * s; lat <= north; lat = +(lat + s).toFixed(6))
     features.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[west, lat], [east, lat]] } });
   return { type: 'FeatureCollection', features };
+}
+
+// ── Export tile grid (matches visual grid exactly) ───────────────────────────
+function computeExportTiles([west, south, east, north]) {
+  const s    = GRID_STEP;
+  const lons = [];
+  for (let lon = Math.floor(west/s)*s; lon <= east + 0.0001; lon = +(lon+s).toFixed(6))
+    lons.push(+lon.toFixed(4));
+  const lats = [];
+  for (let lat = Math.floor(south/s)*s; lat <= north + 0.0001; lat = +(lat+s).toFixed(6))
+    lats.push(+lat.toFixed(4));
+  const tiles = [];
+  let row = 0;
+  for (let r = lats.length - 1; r > 0; r--) {   // north first
+    let col = 0;
+    for (let c = 0; c < lons.length - 1; c++) {
+      tiles.push({ id: `r${row}c${col}`, west: lons[c], south: lats[r-1], east: lons[c+1], north: lats[r], row, col });
+      col++;
+    }
+    row++;
+  }
+  return tiles;
+}
+
+function tilesToGeoJSON(tiles, selectedSet) {
+  return {
+    type: 'FeatureCollection',
+    features: tiles.filter(t => selectedSet.has(t.id)).map(t => ({
+      type: 'Feature', properties: {},
+      geometry: { type: 'Polygon', coordinates: [[
+        [t.west, t.south], [t.east, t.south], [t.east, t.north], [t.west, t.north], [t.west, t.south]
+      ]] },
+    })),
+  };
 }
 
 const SEA_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
@@ -276,6 +310,18 @@ export default function App() {
   const [gridOn,      setGridOn]      = useState(false);
   const [exportOpen,  setExportOpen]  = useState(false);
 
+  // ── Tile-selection state (for export) ─────────────────────────────────────
+  const tileSelectRef      = useRef(false);
+  const exportTilesRef     = useRef([]);
+  const tileClickHandlerRef = useRef(null);
+  const [tileSelectActive, setTileSelectActive] = useState(false);
+  const [selectedTiles,    setSelectedTiles]    = useState(() => new Set());
+
+  const exportTiles = useMemo(() => {
+    const co = COUNTRIES.find(c => c.label === country);
+    return co?.bbox ? computeExportTiles(co.bbox) : [];
+  }, [country]);
+
   // ── Fetch a GEE map tile URL from an expression ──────────────────────────
   const fetchGEETileUrl = useCallback(async (expression, visOptions) => {
     const body = { expression, fileFormat: 'PNG' };
@@ -387,6 +433,12 @@ export default function App() {
         map.addSource('boundary-country', { type: 'raster', tiles: [cUrl], tileSize: 256 });
         map.addLayer({ id: 'boundary-layer-country', type: 'raster', source: 'boundary-country',
           paint: { 'raster-opacity': 1 } });
+      }
+      // Restore tile-selection fill layer
+      if (tileSelectRef.current) {
+        map.addSource('tile-select-src', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({ id: 'tile-select-fill', type: 'fill', source: 'tile-select-src',
+          paint: { 'fill-color': '#7b8cde', 'fill-opacity': 0.40 } });
       }
     });
 
@@ -558,6 +610,73 @@ export default function App() {
     setProjectId(val);
     projectRef.current = val;
   }, []);
+
+  // ── Tile selection: keep ref in sync, reset when country changes ──────────
+  useEffect(() => {
+    exportTilesRef.current = exportTiles;
+    // Re-initialise to all-selected on country change
+    const allIds = new Set(exportTiles.map(t => t.id));
+    setSelectedTiles(allIds);
+    // Update fill layer if it exists
+    const map = mapRef.current;
+    if (map?.getSource('tile-select-src'))
+      map.getSource('tile-select-src').setData(tilesToGeoJSON(exportTiles, allIds));
+  }, [exportTiles]);
+
+  // ── Tile selection: enable / disable map interaction ──────────────────────
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    tileSelectRef.current = tileSelectActive;
+
+    // Remove stale click handler
+    if (tileClickHandlerRef.current) {
+      map.off('click', tileClickHandlerRef.current);
+      tileClickHandlerRef.current = null;
+    }
+
+    if (tileSelectActive) {
+      map.getCanvas().style.cursor = 'crosshair';
+
+      // Add fill source/layer if not present
+      if (!map.getSource('tile-select-src')) {
+        map.addSource('tile-select-src', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({ id: 'tile-select-fill', type: 'fill', source: 'tile-select-src',
+          paint: { 'fill-color': '#7b8cde', 'fill-opacity': 0.40 } });
+      }
+      // Initial data
+      const tiles = exportTilesRef.current;
+      setSelectedTiles(prev => {
+        const all = new Set(tiles.map(t => t.id));
+        const init = prev.size > 0 ? prev : all;
+        map.getSource('tile-select-src').setData(tilesToGeoJSON(tiles, init));
+        return init;
+      });
+
+      // Click handler
+      const handler = (e) => {
+        const { lng, lat } = e.lngLat;
+        const tile = exportTilesRef.current.find(
+          t => lng >= t.west && lng < t.east && lat >= t.south && lat < t.north
+        );
+        if (!tile) return;
+        setSelectedTiles(prev => {
+          const next = new Set(prev);
+          if (next.has(tile.id)) next.delete(tile.id); else next.add(tile.id);
+          // Update fill immediately
+          if (mapRef.current?.getSource('tile-select-src'))
+            mapRef.current.getSource('tile-select-src').setData(tilesToGeoJSON(exportTilesRef.current, next));
+          return next;
+        });
+      };
+      tileClickHandlerRef.current = handler;
+      map.on('click', handler);
+    } else {
+      map.getCanvas().style.cursor = '';
+      ['tile-select-fill'].forEach(id => { if (map.getLayer(id)) map.removeLayer(id); });
+      if (map.getSource('tile-select-src')) map.removeSource('tile-select-src');
+    }
+  }, [tileSelectActive]);
 
   // ── Basemap switch ────────────────────────────────────────────────────────
   const handleBasemap = useCallback((e) => {
@@ -758,9 +877,13 @@ export default function App() {
           country={country}
           gaulName={COUNTRIES.find(c => c.label === country)?.gaul ?? country}
           year={year}
-          projectId={projectId}
-          bbox={COUNTRIES.find(c => c.label === country)?.bbox}
-          onClose={() => setExportOpen(false)}
+          tiles={exportTiles}
+          selectedTiles={selectedTiles}
+          tileSelectActive={tileSelectActive}
+          onTileSelectToggle={setTileSelectActive}
+          onSelectAllTiles={() => setSelectedTiles(new Set(exportTilesRef.current.map(t => t.id)))}
+          onSelectNoTiles={() => setSelectedTiles(new Set())}
+          onClose={() => { setTileSelectActive(false); setExportOpen(false); }}
         />
       )}
     </div>
