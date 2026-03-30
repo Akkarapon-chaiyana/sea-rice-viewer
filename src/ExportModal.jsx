@@ -32,7 +32,8 @@ function scriptHeader(mode, country, year, scale, projectId) {
 }
 
 function layerImg(l) {
-  const mask = l.extra === 'binary' ? '.gte(50).selfMask()' : '';
+  // Binary: .gte(50).unmask(0)  →  1 = rice, 0 = non-rice / nodata (no masked pixels)
+  const mask = l.extra === 'binary' ? '.gte(50).unmask(0)' : '';
   return (
     `asset = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'\n` +
     `img   = ee.Image(asset)${mask}`
@@ -73,7 +74,7 @@ function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTil
   const n   = activeTiles.length;
   const hdr = scriptHeader(`Google Drive — ${n} Tiles`, country, year, scale, projectId);
   const tilesList = activeTiles.map(t =>
-    `    [${t.bbox.join(', ')}],  # ${t.id}`
+    `    {'id': '${t.id}', 'bbox': [${t.bbox.join(', ')}]},`
   ).join('\n');
   return hdr +
     `COUNTRY       = '${country}'\n` +
@@ -84,10 +85,12 @@ function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTil
     `print(f'Submitting {len(TILES)} tile exports for ${country} ({year}) at ${scale} m ...')\n` +
     selectedLayers.map(l =>
       `\n# ── ${l.label}\n` +
-      `for i, (w, s, e, n) in enumerate(TILES):\n` +
+      `for i, tile in enumerate(TILES):\n` +
+      `    tid    = tile['id']\n` +
+      `    w, s, e, n = tile['bbox']\n` +
       `    region = ee.Geometry.Rectangle([w, s, e, n])\n` +
       `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(region)\n` +
-      `    desc   = f'${l.suffix}_${country}_${year}_t{i:03d}'\n` +
+      `    desc   = f'${l.suffix}_${country}_${year}_{tid}'\n` +
       `    task   = ee.batch.Export.image.toDrive(\n` +
       `        image=img, description=desc, folder=OUTPUT_FOLDER,\n` +
       `        fileNamePrefix=desc, region=region,\n` +
@@ -119,23 +122,44 @@ const PY_SUBDIVIDE =
   `    return [[round(west + c*dlon, 4), round(south + r*dlat, 4),\n` +
   `             round(west + (c+1)*dlon, 4), round(south + (r+1)*dlat, 4)]\n` +
   `            for r in range(n) for c in range(n)]\n\n` +
-  `def download_image(img, desc, region):\n` +
+  `def download_image(img, fpath, region):\n` +
+  `    """Download one GeoTIFF to fpath (handles both ZIP and raw-TIFF responses)."""\n` +
   `    url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
   `                              'region': region, 'format': 'GeoTIFF'})\n` +
-  `    print(f'    {desc} ...', end=' ', flush=True)\n` +
+  `    print(f'    {os.path.basename(fpath)} ...', end=' ', flush=True)\n` +
   `    resp = requests.get(url, stream=True)\n` +
   `    resp.raise_for_status()\n` +
   `    data = resp.content\n` +
   `    # GEE returns a ZIP archive OR a raw GeoTIFF depending on API version\n` +
   `    if data[:2] == b'PK':                              # ZIP magic bytes\n` +
   `        with zipfile.ZipFile(io.BytesIO(data)) as z:\n` +
-  `            z.extractall(OUTPUT_DIR)\n` +
+  `            nm = z.namelist()[0]\n` +
+  `            z.extract(nm, OUTPUT_DIR)\n` +
+  `            os.replace(os.path.join(OUTPUT_DIR, nm), fpath)\n` +
   `    elif data[:2] in (b'II', b'MM'):                  # TIFF little/big-endian\n` +
-  `        path = os.path.join(OUTPUT_DIR, desc + '.tif')\n` +
-  `        with open(path, 'wb') as f: f.write(data)\n` +
+  `        with open(fpath, 'wb') as f: f.write(data)\n` +
   `    else:\n` +
-  `        raise RuntimeError(f'Unexpected response for {desc}: {data[:120]}')\n` +
-  `    print('done')\n\n`;
+  `        raise RuntimeError(f'Unexpected response for {os.path.basename(fpath)}: {data[:120]}')\n` +
+  `    print('done')\n\n` +
+  `def mosaic_subtiles(paths, out_path):\n` +
+  `    """Merge sub-tile GeoTIFFs into one file, then delete the parts."""\n` +
+  `    if len(paths) == 1:\n` +
+  `        os.replace(paths[0], out_path)\n` +
+  `        return\n` +
+  `    try:\n` +
+  `        import rasterio\n` +
+  `        from rasterio.merge import merge\n` +
+  `        srcs    = [rasterio.open(p) for p in paths]\n` +
+  `        mosaic, transform = merge(srcs)\n` +
+  `        profile = srcs[0].profile.copy()\n` +
+  `        profile.update({'width': mosaic.shape[2], 'height': mosaic.shape[1],\n` +
+  `                        'transform': transform})\n` +
+  `        for src in srcs: src.close()\n` +
+  `        with rasterio.open(out_path, 'w', **profile) as dst: dst.write(mosaic)\n` +
+  `        for p in paths: os.remove(p)\n` +
+  `        print(f'    → mosaicked {len(paths)} sub-tiles → {os.path.basename(out_path)}')\n` +
+  `    except ImportError:\n` +
+  `        print('    [warn] rasterio not found; sub-tiles kept separately (pip install rasterio)')\n\n`;
 
 // Local download — whole country (auto-tiled)
 function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outputDir, projectId }) {
@@ -165,20 +189,21 @@ function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outpu
       `for i, (tw, ts, te, tn) in enumerate(TILES):\n` +
       `    sub_geom = ee.Geometry.Rectangle([tw, ts, te, tn]).intersection(geometry)\n` +
       `    suf      = f'_t{i:03d}' if len(TILES) > 1 else ''\n` +
+      `    fpath    = os.path.join(OUTPUT_DIR, f'${l.suffix}_${country}_${year}{suf}.tif')\n` +
       `    print(f'  [{i+1}/{len(TILES)}] {tw},{ts} → {te},{tn}')\n` +
       `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(sub_geom)\n` +
-      `    download_image(img, f'${l.suffix}_${country}_${year}{suf}', sub_geom)`
+      `    download_image(img, fpath, sub_geom)`
     ).join('\n') +
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
 
-// Local download — grid tiles (auto-subdivided per tile)
+// Local download — grid tiles (auto-subdivided per tile, mosaicked after)
 function genLocalTiles({ country, year, scale, selectedLayers, outputDir, activeTiles, projectId }) {
   const n   = activeTiles.length;
   const dir = outputDir || './sea_rice_output';
   const hdr = scriptHeader(`Local Download — ${n} Tiles`, country, year, scale, projectId);
   const tilesList = activeTiles.map(t =>
-    `    [${t.bbox.join(', ')}],  # ${t.id}`
+    `    {'id': '${t.id}', 'bbox': [${t.bbox.join(', ')}]},`
   ).join('\n');
   return hdr +
     PY_SUBDIVIDE +
@@ -191,17 +216,22 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
     `print(f'${country} (${year}) at ${scale} m — ${n} tile(s) selected')\n` +
     selectedLayers.map(l =>
       `\n# ── ${l.label}\n` +
-      `for i, (w, s, e, n) in enumerate(TILES):\n` +
+      `for i, tile in enumerate(TILES):\n` +
+      `    tid  = tile['id']\n` +
+      `    w, s, e, n = tile['bbox']\n` +
       `    subs = subdivide_tile(w, s, e, n, SCALE)\n` +
-      `    note = f' → {len(subs)} sub-tiles' if len(subs) > 1 else ''\n` +
-      `    print(f'  Tile [{i+1}/{len(TILES)}] [{w},{s}→{e},{n}]{note}')\n` +
+      `    note = f' → {len(subs)} sub-tile(s)' if len(subs) > 1 else ''\n` +
+      `    print(f'  Tile [{i+1}/{len(TILES)}] {tid}{note}')\n` +
       `    ` + layerImg(l).replace(/\n/g, '\n    ') + `\n` +
+      `    sub_paths = []\n` +
       `    for j, (sw, ss, se, sn) in enumerate(subs):\n` +
       `        region = ee.Geometry.Rectangle([sw, ss, se, sn])\n` +
       `        suf    = f'_s{j:02d}' if len(subs) > 1 else ''\n` +
-      `        download_image(img.clip(region),\n` +
-      `                       f'${l.suffix}_${country}_${year}_t{i:03d}{suf}',\n` +
-      `                       region)`
+      `        fpath  = os.path.join(OUTPUT_DIR, f'${l.suffix}_${country}_${year}_{tid}{suf}.tif')\n` +
+      `        download_image(img.clip(region), fpath, region)\n` +
+      `        sub_paths.append(fpath)\n` +
+      `    out_path = os.path.join(OUTPUT_DIR, f'${l.suffix}_${country}_${year}_{tid}.tif')\n` +
+      `    mosaic_subtiles(sub_paths, out_path)`
     ).join('\n') +
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
