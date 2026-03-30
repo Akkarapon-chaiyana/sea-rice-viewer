@@ -32,8 +32,8 @@ function scriptHeader(mode, country, year, scale, projectId) {
 }
 
 function layerImg(l) {
-  // Binary: .gte(50).unmask(0)  →  1 = rice, 0 = non-rice / nodata (no masked pixels)
-  const mask = l.extra === 'binary' ? '.gte(50).unmask(0)' : '';
+  // Binary: .gte(50).unmask(0, False)  →  1 = rice, 0 = non-rice / nodata globally (sameFootprint=False)
+  const mask = l.extra === 'binary' ? '.gte(50).unmask(0, False)' : '';
   return (
     `asset = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'\n` +
     `img   = ee.Image(asset)${mask}`
