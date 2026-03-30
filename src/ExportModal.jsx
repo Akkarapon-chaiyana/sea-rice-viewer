@@ -11,7 +11,8 @@ const LAYER_OPTIONS = [
 const SCALES = [10, 30, 100, 250, 1000];
 
 // ── Script helpers ────────────────────────────────────────────────────────────
-function scriptHeader(mode, country, year, scale) {
+function scriptHeader(mode, country, year, scale, projectId) {
+  const proj = projectId || 'your-gcp-project-id';
   return (
     '#!/usr/bin/env python3\n' +
     '"""\n' +
@@ -22,9 +23,9 @@ function scriptHeader(mode, country, year, scale) {
     `Scale   : ${scale} m\n` +
     '"""\n' +
     'import ee\n\n' +
-    '# ── Set your GCP project ID (obtained after ee.Authenticate) ─────────────\n' +
-    "GCP_PROJECT  = 'your-gcp-project-id'  # <-- change this\n" +
-    'ASSET_PREFIX = \'projects/tony-1122/assets/NIE/rice\'\n\n' +
+    '# ── GCP project ID — set to the project you signed in with ───────────────\n' +
+    `GCP_PROJECT  = '${proj}'\n` +
+    "ASSET_PREFIX = 'projects/tony-1122/assets/NIE/rice'\n\n" +
     'ee.Authenticate()\n' +
     'ee.Initialize(project=GCP_PROJECT)\n\n'
   );
@@ -39,8 +40,8 @@ function layerImg(l) {
 }
 
 // Google Drive — whole country
-function genDriveCountry({ country, gaulName, year, scale, folder, selectedLayers }) {
-  const hdr = scriptHeader('Google Drive — Whole Country', country, year, scale);
+function genDriveCountry({ country, gaulName, year, scale, folder, selectedLayers, projectId }) {
+  const hdr = scriptHeader('Google Drive — Whole Country', country, year, scale, projectId);
   return hdr +
     `COUNTRY       = '${country}'\n` +
     `GAUL_NAME     = '${gaulName}'\n` +
@@ -68,11 +69,11 @@ function genDriveCountry({ country, gaulName, year, scale, folder, selectedLayer
 }
 
 // Google Drive — grid tiles
-function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTiles }) {
+function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTiles, projectId }) {
   const n   = activeTiles.length;
-  const hdr = scriptHeader(`Google Drive — ${n} Tiles`, country, year, scale);
+  const hdr = scriptHeader(`Google Drive — ${n} Tiles`, country, year, scale, projectId);
   const tilesList = activeTiles.map(t =>
-    `    [${t.west}, ${t.south}, ${t.east}, ${t.north}],`
+    `    [${t.bbox.join(', ')}],  # ${t.id}`
   ).join('\n');
   return hdr +
     `COUNTRY       = '${country}'\n` +
@@ -100,9 +101,9 @@ function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTil
 }
 
 // Local download — whole country
-function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outputDir }) {
+function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outputDir, projectId }) {
   const dir = outputDir || './sea_rice_output';
-  const hdr = scriptHeader('Local Download — Whole Country', country, year, scale);
+  const hdr = scriptHeader('Local Download — Whole Country', country, year, scale, projectId);
   return hdr +
     `import requests, zipfile, io, os\n\n` +
     `COUNTRY    = '${country}'\n` +
@@ -133,12 +134,12 @@ function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outpu
 }
 
 // Local download — grid tiles
-function genLocalTiles({ country, year, scale, selectedLayers, outputDir, activeTiles }) {
+function genLocalTiles({ country, year, scale, selectedLayers, outputDir, activeTiles, projectId }) {
   const n   = activeTiles.length;
   const dir = outputDir || './sea_rice_output';
-  const hdr = scriptHeader(`Local Download — ${n} Tiles`, country, year, scale);
+  const hdr = scriptHeader(`Local Download — ${n} Tiles`, country, year, scale, projectId);
   const tilesList = activeTiles.map(t =>
-    `    [${t.west}, ${t.south}, ${t.east}, ${t.north}],`
+    `    [${t.bbox.join(', ')}],  # ${t.id}`
   ).join('\n');
   return hdr +
     `import requests, zipfile, io, os\n\n` +
@@ -171,8 +172,8 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ExportModal({
-  country, gaulName, year,
-  tiles, selectedTiles, tileSelectActive,
+  country, gaulName, year, projectId,
+  selectedTiles, tileSelectActive,
   onTileSelectToggle, onSelectAllTiles, onSelectNoTiles,
   onClose,
 }) {
@@ -197,18 +198,19 @@ export default function ExportModal({
   }, [tileSelectActive, onTileSelectToggle, onClose]);
 
   const selectedLayers = LAYER_OPTIONS.filter(l => selected[l.id]);
-  const activeTiles    = (tiles || []).filter(t => selectedTiles?.has(t.id));
-  const totalTiles     = (tiles || []).length;
+  // selectedTiles is a Map<id, {id, bbox}> — convert to array for script generation
+  const activeTiles    = [...(selectedTiles?.values() || [])];
+  const totalTiles     = selectedTiles?.size ?? 0;
 
   const script = useMemo(() => {
-    const args = { country, gaulName, year, scale, folder, outputDir, selectedLayers, activeTiles };
+    const args = { country, gaulName, year, scale, folder, outputDir, selectedLayers, activeTiles, projectId };
     if (exportTarget === 'country') {
       return exportDest === 'drive' ? genDriveCountry(args) : genLocalCountry(args);
     } else {
       return exportDest === 'drive' ? genDriveTiles(args)   : genLocalTiles(args);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [country, gaulName, year, scale, folder, outputDir, exportTarget, exportDest,
+  }, [country, gaulName, year, scale, folder, outputDir, exportTarget, exportDest, projectId,
       JSON.stringify(selectedLayers.map(l => l.id)),
       activeTiles.length, JSON.stringify(activeTiles.map(t => t.id))]);
 
@@ -292,7 +294,7 @@ export default function ExportModal({
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <span style={{ fontSize: 11, color: '#aaaacc' }}>
                     <span style={{ color: '#7b8cde', fontWeight: 600, fontSize: 14 }}>{activeTiles.length}</span>
-                    <span style={{ color: '#666688' }}> / {totalTiles} tiles selected</span>
+                    <span style={{ color: '#666688' }}> tiles selected (SEA grid)</span>
                   </span>
                   <div style={{ display: 'flex', gap: 5 }}>
                     <button className="scale-btn" style={{ padding: '2px 10px', fontSize: 10 }}
@@ -319,8 +321,10 @@ export default function ExportModal({
                   </div>
                 )}
 
-                {activeTiles.length === 0 && !tileSelectActive && (
-                  <div className="auth-status error">No tiles selected — nothing will be exported.</div>
+                {activeTiles.length === 0 && (
+                  <div className="auth-status error" style={{ marginTop: 4 }}>
+                    No tiles selected — click tiles on the map or use <strong>All</strong>.
+                  </div>
                 )}
               </div>
             )}
