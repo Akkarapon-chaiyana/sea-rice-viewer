@@ -111,8 +111,13 @@ function buildExpression(assetPath, clipGeometry, isBinary) {
               functionInvocationValue: {
                 functionName: 'Image.gte',
                 arguments: {
-                  input:  loadExpr,
-                  image2: { constantValue: 50 },
+                  image1: loadExpr,
+                  image2: {
+                    functionInvocationValue: {
+                      functionName: 'Image.constant',
+                      arguments: { value: { constantValue: 50 } },
+                    },
+                  },
                 },
               },
             },
