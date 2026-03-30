@@ -5,25 +5,22 @@ import './App.css';
 // ── Constants ────────────────────────────────────────────────────────────────
 const ASSET_PREFIX = 'projects/tony-1122/assets/NIE/rice/';
 const GEE_API      = 'https://earthengine.googleapis.com/v1';
-const SEA_ISO      = new Set(['THA','MMR','VNM','LAO','KHM','PHL','MYS','IDN','BRN','TLS','SGP']);
-
-// World 110m countries GeoJSON (Natural Earth, ~1 MB)
-const BOUNDARIES_URL =
-  'https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/110m/cultural/ne_110m_admin_0_countries.json';
 
 const COUNTRIES = [
-  { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                          center: [100.5,  13.5], zoom: 5 },
-  { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', gaul: 'Myanmar',                           center: [ 96.0,  19.0], zoom: 5 },
-  { label: 'Vietnam',     slug: 'vietnam',     iso: 'VNM', gaul: 'Viet Nam',                          center: [106.0,  16.0], zoom: 5 },
-  { label: 'Laos',        slug: 'laos',        iso: 'LAO', gaul: "Lao People's Democratic Republic",  center: [103.0,  18.0], zoom: 6 },
-  { label: 'Cambodia',    slug: 'cambodia',    iso: 'KHM', gaul: 'Cambodia',                          center: [105.0,  12.5], zoom: 6 },
-  { label: 'Philippines', slug: 'philippines', iso: 'PHL', gaul: 'Philippines',                       center: [122.0,  12.0], zoom: 5 },
-  { label: 'Malaysia',    slug: 'malaysia',    iso: 'MYS', gaul: 'Malaysia',                          center: [109.0,   3.5], zoom: 5 },
-  { label: 'Indonesia',   slug: 'indonesia',   iso: 'IDN', gaul: 'Indonesia',                         center: [113.0,  -1.0], zoom: 5 },
-  { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                 center: [114.7,   4.5], zoom: 8 },
-  { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                       center: [125.5,  -8.8], zoom: 8 },
-  { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                         center: [103.8,   1.35], zoom: 10 },
+  { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                         center: [100.5,  13.5], zoom: 5 },
+  { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', gaul: 'Myanmar',                          center: [ 96.0,  19.0], zoom: 5 },
+  { label: 'Vietnam',     slug: 'vietnam',     iso: 'VNM', gaul: 'Viet Nam',                         center: [106.0,  16.0], zoom: 5 },
+  { label: 'Laos',        slug: 'laos',        iso: 'LAO', gaul: "Lao People's Democratic Republic", center: [103.0,  18.0], zoom: 6 },
+  { label: 'Cambodia',    slug: 'cambodia',    iso: 'KHM', gaul: 'Cambodia',                         center: [105.0,  12.5], zoom: 6 },
+  { label: 'Philippines', slug: 'philippines', iso: 'PHL', gaul: 'Philippines',                      center: [122.0,  12.0], zoom: 5 },
+  { label: 'Malaysia',    slug: 'malaysia',    iso: 'MYS', gaul: 'Malaysia',                         center: [109.0,   3.5], zoom: 5 },
+  { label: 'Indonesia',   slug: 'indonesia',   iso: 'IDN', gaul: 'Indonesia',                        center: [113.0,  -1.0], zoom: 5 },
+  { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                center: [114.7,   4.5], zoom: 8 },
+  { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8 },
+  { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10 },
 ];
+
+const SEA_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
 
 const YEARS = ['2019', '2020', '2021', '2022', '2023'];
 
@@ -89,7 +86,74 @@ const BASEMAPS = [
   { id: 'light',   label: 'Light',   url: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json' },
 ];
 
-// ── GEE expression builders ──────────────────────────────────────────────────
+// ── GEE expression helpers ───────────────────────────────────────────────────
+function buildGAULTable() {
+  return {
+    functionInvocationValue: {
+      functionName: 'Collection.loadTable',
+      arguments: { tableId: { constantValue: 'FAO/GAUL/2015/level0' } },
+    },
+  };
+}
+
+function buildCountryFilter(gaulName) {
+  return {
+    functionInvocationValue: {
+      functionName: 'Collection.filter',
+      arguments: {
+        collection: buildGAULTable(),
+        filter: {
+          functionInvocationValue: {
+            functionName: 'Filter.eq',
+            arguments: {
+              leftField:  { constantValue: 'ADM0_NAME' },
+              rightValue: { constantValue: gaulName },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+function buildSEAFilter() {
+  return {
+    functionInvocationValue: {
+      functionName: 'Collection.filter',
+      arguments: {
+        collection: buildGAULTable(),
+        filter: {
+          functionInvocationValue: {
+            functionName: 'Filter.inList',
+            arguments: {
+              leftField:  { constantValue: 'ADM0_NAME' },
+              rightValue: { arrayValue: { values: SEA_GAUL_NAMES.map(n => ({ constantValue: n })) } },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+function buildBoundaryExpression(collectionExpr, color) {
+  return {
+    result: '0',
+    values: {
+      '0': {
+        functionInvocationValue: {
+          functionName: 'Collection.draw',
+          arguments: {
+            collection:  collectionExpr,
+            color:       { constantValue: color },
+            strokeWidth: { constantValue: 2 },
+          },
+        },
+      },
+    },
+  };
+}
+
 function buildExpression(assetPath, gaulName, isBinary) {
   const loadExpr = {
     functionInvocationValue: {
@@ -122,29 +186,6 @@ function buildExpression(assetPath, gaulName, isBinary) {
       }
     : loadExpr;
 
-  const clipExpr = {
-    functionInvocationValue: {
-      functionName: 'Collection.filter',
-      arguments: {
-        collection: {
-          functionInvocationValue: {
-            functionName: 'Collection.loadTable',
-            arguments: { tableId: { constantValue: 'FAO/GAUL/2015/level0' } },
-          },
-        },
-        filter: {
-          functionInvocationValue: {
-            functionName: 'Filter.eq',
-            arguments: {
-              leftField:  { constantValue: 'ADM0_NAME' },
-              rightValue: { constantValue: gaulName },
-            },
-          },
-        },
-      },
-    },
-  };
-
   return {
     result: '0',
     values: {
@@ -153,7 +194,7 @@ function buildExpression(assetPath, gaulName, isBinary) {
           functionName: 'Image.clip',
           arguments: {
             input:    imgExpr,
-            geometry: clipExpr,
+            geometry: buildCountryFilter(gaulName),
           },
         },
       },
@@ -177,9 +218,10 @@ export default function App() {
   const tokenRef   = useRef('');
   const projectRef = useRef('');
   const layersRef  = useRef(initLayers());
-  const geoRef     = useRef(null);   // cached world GeoJSON features: Map<iso -> feature>
   const seaOnRef   = useRef(false);
   const countryRef = useRef('Thailand');
+  // Store boundary tile URLs so they can be restored after basemap switch
+  const boundaryTilesRef = useRef({ country: null, sea: null });
 
   const [country,     setCountry]     = useState('Thailand');
   const [year,        setYear]        = useState('2021');
@@ -188,57 +230,65 @@ export default function App() {
   const [tokenStatus, setTokenStatus] = useState(null);
   const [layers,      setLayers]      = useState(initLayers);
   const [seaOn,       setSeaOn]       = useState(false);
-  const [geoReady,    setGeoReady]    = useState(false);
 
-  // ── Fetch world GeoJSON once on mount ────────────────────────────────────
-  useEffect(() => {
-    fetch(BOUNDARIES_URL)
-      .then(r => r.json())
-      .then(data => {
-        const map = new Map();
-        data.features.forEach(f => {
-          const iso = f.properties?.ISO_A3;
-          if (iso) map.set(iso, f);
-        });
-        geoRef.current = map;
-        setGeoReady(true);
-      })
-      .catch(() => setGeoReady(false));
+  // ── Fetch a GEE map tile URL from an expression ──────────────────────────
+  const fetchGEETileUrl = useCallback(async (expression, visOptions) => {
+    const body = { expression, fileFormat: 'PNG' };
+    if (visOptions) body.visualizationOptions = visOptions;
+    const res = await fetch(`${GEE_API}/projects/${projectRef.current}/maps`, {
+      method: 'POST',
+      headers: {
+        Authorization:      `Bearer ${tokenRef.current}`,
+        'x-goog-user-project': projectRef.current,
+        'Content-Type':     'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error?.message || `HTTP ${res.status}`);
+    const { name } = await res.json();
+    return `${GEE_API}/${name}/tiles/{z}/{x}/{y}`;
   }, []);
 
-  // ── Helper: add boundary layers to map ──────────────────────────────────
-  const addBoundaryLayers = useCallback((map, isoSelected, showSea) => {
-    if (!geoRef.current) return;
+  // ── Add a raster tile layer to the map ───────────────────────────────────
+  const addRasterLayer = useCallback((map, sourceId, layerId, tileUrl, opacity = 1) => {
+    if (map.getLayer(layerId))   map.removeLayer(layerId);
+    if (map.getSource(sourceId)) map.removeSource(sourceId);
+    map.addSource(sourceId, { type: 'raster', tiles: [tileUrl], tileSize: 256 });
+    map.addLayer({ id: layerId, type: 'raster', source: sourceId,
+      paint: { 'raster-opacity': opacity } });
+  }, []);
 
-    // SEA boundaries (all 11 countries)
-    if (showSea) {
-      const seaFeatures = [...geoRef.current.values()].filter(f => SEA_ISO.has(f.properties?.ISO_A3));
-      if (!map.getSource('sea-boundary')) {
-        map.addSource('sea-boundary', {
-          type: 'geojson',
-          data: { type: 'FeatureCollection', features: seaFeatures },
-        });
-        map.addLayer({
-          id: 'sea-boundary-line', type: 'line', source: 'sea-boundary',
-          paint: { 'line-color': '#00ffff', 'line-width': 1.2, 'line-opacity': 0.8 },
-        });
+  // ── Load country boundary from FAO GAUL ──────────────────────────────────
+  const loadCountryBoundary = useCallback(async (gaulName) => {
+    const map = mapRef.current;
+    if (!map || !tokenRef.current || !projectRef.current) return;
+    try {
+      const tileUrl = await fetchGEETileUrl(
+        buildBoundaryExpression(buildCountryFilter(gaulName), 'bf40ff')
+      );
+      boundaryTilesRef.current.country = tileUrl;
+      if (map.isStyleLoaded()) {
+        addRasterLayer(map, 'boundary-country', 'boundary-layer-country', tileUrl);
       }
-    }
+    } catch { /* silently ignore */ }
+  }, [fetchGEETileUrl, addRasterLayer]);
 
-    // Selected country boundary (always shown when a country is active)
-    const countryObj = COUNTRIES.find(c => c.label === isoSelected);
-    const feature    = countryObj ? geoRef.current.get(countryObj.iso) : null;
-    if (feature && !map.getSource('country-boundary')) {
-      map.addSource('country-boundary', {
-        type: 'geojson',
-        data: feature,
-      });
-      map.addLayer({
-        id: 'country-boundary-line', type: 'line', source: 'country-boundary',
-        paint: { 'line-color': '#bf40ff', 'line-width': 2, 'line-opacity': 1 },
-      });
-    }
-  }, []);
+  // ── Load SEA boundaries from FAO GAUL ────────────────────────────────────
+  const loadSEABoundary = useCallback(async () => {
+    const map = mapRef.current;
+    if (!map || !tokenRef.current || !projectRef.current) return;
+    try {
+      const tileUrl = await fetchGEETileUrl(
+        buildBoundaryExpression(buildSEAFilter(), '00ffff')
+      );
+      boundaryTilesRef.current.sea = tileUrl;
+      if (map.isStyleLoaded()) {
+        addRasterLayer(map, 'boundary-sea', 'boundary-layer-sea', tileUrl);
+        // Keep country boundary on top
+        if (map.getLayer('boundary-layer-country')) map.moveLayer('boundary-layer-country');
+      }
+    } catch { /* silently ignore */ }
+  }, [fetchGEETileUrl, addRasterLayer]);
 
   // ── Map init ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -254,7 +304,7 @@ export default function App() {
           return {
             url,
             headers: {
-              Authorization: `Bearer ${tokenRef.current}`,
+              Authorization:         `Bearer ${tokenRef.current}`,
               'x-goog-user-project': projectRef.current,
             },
           };
@@ -271,47 +321,28 @@ export default function App() {
       const current = layersRef.current;
       LAYER_TYPES.forEach(lt => {
         const s = current[lt.id];
-        if (s.tileUrl && !map.getSource(`gee-${lt.id}`)) {
+        if (s.tileUrl) {
           map.addSource(`gee-${lt.id}`, { type: 'raster', tiles: [s.tileUrl], tileSize: 256 });
           map.addLayer({ id: `gee-layer-${lt.id}`, type: 'raster', source: `gee-${lt.id}`,
             paint: { 'raster-opacity': s.enabled ? s.opacity : 0 } });
         }
       });
-      addBoundaryLayers(map, countryRef.current, seaOnRef.current);
+      // Restore boundaries
+      const { country: cUrl, sea: sUrl } = boundaryTilesRef.current;
+      if (sUrl && seaOnRef.current) {
+        map.addSource('boundary-sea', { type: 'raster', tiles: [sUrl], tileSize: 256 });
+        map.addLayer({ id: 'boundary-layer-sea', type: 'raster', source: 'boundary-sea',
+          paint: { 'raster-opacity': 1 } });
+      }
+      if (cUrl) {
+        map.addSource('boundary-country', { type: 'raster', tiles: [cUrl], tileSize: 256 });
+        map.addLayer({ id: 'boundary-layer-country', type: 'raster', source: 'boundary-country',
+          paint: { 'raster-opacity': 1 } });
+      }
     });
 
     return () => map.remove();
-  }, [addBoundaryLayers]);
-
-  // ── Update country boundary on the map ───────────────────────────────────
-  const updateCountryBoundary = useCallback((countryLabel) => {
-    const map = mapRef.current;
-    if (!map || !geoRef.current) return;
-    if (map.getLayer('country-boundary-line')) map.removeLayer('country-boundary-line');
-    if (map.getSource('country-boundary'))     map.removeSource('country-boundary');
-    const countryObj = COUNTRIES.find(c => c.label === countryLabel);
-    const feature    = countryObj ? geoRef.current.get(countryObj.iso) : null;
-    if (feature) {
-      map.addSource('country-boundary', { type: 'geojson', data: feature });
-      map.addLayer({
-        id: 'country-boundary-line', type: 'line', source: 'country-boundary',
-        paint: { 'line-color': '#bf40ff', 'line-width': 2, 'line-opacity': 1 },
-      });
-    }
   }, []);
-
-  // Show country boundary once GeoJSON is ready
-  useEffect(() => {
-    if (geoReady && mapRef.current) {
-      const map = mapRef.current;
-      // Wait for map to be loaded before adding layers
-      if (map.isStyleLoaded()) {
-        updateCountryBoundary(country);
-      } else {
-        map.once('style.load', () => updateCountryBoundary(country));
-      }
-    }
-  }, [geoReady, country, updateCountryBoundary]);
 
   // ── OAuth sign-in ─────────────────────────────────────────────────────────
   const handleSignIn = useCallback(() => {
@@ -322,12 +353,19 @@ export default function App() {
       client_id: clientId,
       scope: 'https://www.googleapis.com/auth/earthengine',
       callback: (resp) => {
-        if (resp.access_token) { tokenRef.current = resp.access_token; setTokenStatus('ok'); }
-        else setTokenStatus('error');
+        if (resp.access_token) {
+          tokenRef.current = resp.access_token;
+          setTokenStatus('ok');
+          // Load country boundary after sign-in
+          const co = COUNTRIES.find(c => c.label === countryRef.current);
+          if (co) loadCountryBoundary(co.gaul);
+        } else {
+          setTokenStatus('error');
+        }
       },
     });
     client.requestAccessToken();
-  }, []);
+  }, [loadCountryBoundary]);
 
   // ── Load a single GEE layer ───────────────────────────────────────────────
   const loadLayer = useCallback(async (typeId, countryVal, yearVal) => {
@@ -342,41 +380,18 @@ export default function App() {
     setLayers(prev => ({ ...prev, [typeId]: { ...prev[typeId], loading: true, error: null } }));
 
     try {
-      const res = await fetch(`${GEE_API}/projects/${projectRef.current}/maps`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${tokenRef.current}`,
-          'x-goog-user-project': projectRef.current,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          expression:          buildExpression(assetPath, countryObj.gaul, lt.isBinary),
-          visualizationOptions: lt.vis,
-          fileFormat:          'PNG',
-        }),
-      });
+      const tileUrl  = await fetchGEETileUrl(buildExpression(assetPath, countryObj.gaul, lt.isBinary), lt.vis);
+      const sourceId = `gee-${typeId}`;
+      const layerId  = `gee-layer-${typeId}`;
 
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error?.message || `HTTP ${res.status}`);
-      }
-
-      const { name }  = await res.json();
-      const tileUrl   = `${GEE_API}/${name}/tiles/{z}/{x}/{y}`;
-      const sourceId  = `gee-${typeId}`;
-      const layerId   = `gee-layer-${typeId}`;
-
-      if (map.getSource(sourceId)) { map.removeLayer(layerId); map.removeSource(sourceId); }
-      map.addSource(sourceId, { type: 'raster', tiles: [tileUrl], tileSize: 256 });
-      map.addLayer({ id: layerId, type: 'raster', source: sourceId,
-        paint: { 'raster-opacity': layersRef.current[typeId].opacity } });
+      addRasterLayer(map, sourceId, layerId, tileUrl, layersRef.current[typeId].opacity);
 
       // Keep boundary lines on top
-      if (map.getLayer('sea-boundary-line'))     map.moveLayer('sea-boundary-line');
-      if (map.getLayer('country-boundary-line')) map.moveLayer('country-boundary-line');
+      if (map.getLayer('boundary-layer-sea'))     map.moveLayer('boundary-layer-sea');
+      if (map.getLayer('boundary-layer-country')) map.moveLayer('boundary-layer-country');
 
       const next = { enabled: true, opacity: layersRef.current[typeId].opacity,
-        loading: false, error: null, mapName: name, tileUrl };
+        loading: false, error: null, mapName: null, tileUrl };
       layersRef.current = { ...layersRef.current, [typeId]: next };
       setLayers(prev => ({ ...prev, [typeId]: next }));
     } catch (err) {
@@ -384,16 +399,14 @@ export default function App() {
       layersRef.current = { ...layersRef.current, [typeId]: next };
       setLayers(prev => ({ ...prev, [typeId]: next }));
     }
-  }, []);
+  }, [fetchGEETileUrl, addRasterLayer]);
 
   // ── Remove a layer from map ───────────────────────────────────────────────
   const removeLayerFromMap = useCallback((typeId) => {
     const map = mapRef.current;
     if (!map) return;
-    if (map.getSource(`gee-${typeId}`)) {
-      map.removeLayer(`gee-layer-${typeId}`);
-      map.removeSource(`gee-${typeId}`);
-    }
+    if (map.getLayer(`gee-layer-${typeId}`)) map.removeLayer(`gee-layer-${typeId}`);
+    if (map.getSource(`gee-${typeId}`))      map.removeSource(`gee-${typeId}`);
   }, []);
 
   // ── Toggle checkbox ───────────────────────────────────────────────────────
@@ -446,9 +459,9 @@ export default function App() {
     countryRef.current = val;
     const co = COUNTRIES.find(c => c.label === val);
     if (co && mapRef.current) mapRef.current.flyTo({ center: co.center, zoom: co.zoom, duration: 1200 });
-    updateCountryBoundary(val);
+    if (co && tokenRef.current) loadCountryBoundary(co.gaul);
     refreshActive(val, year);
-  }, [year, refreshActive, updateCountryBoundary]);
+  }, [year, refreshActive, loadCountryBoundary]);
 
   // ── Year change ───────────────────────────────────────────────────────────
   const handleYear = useCallback((e) => {
@@ -480,27 +493,21 @@ export default function App() {
     setSeaOn(checked);
     seaOnRef.current = checked;
     const map = mapRef.current;
-    if (!map || !geoRef.current) return;
+    if (!map) return;
 
     if (checked) {
-      if (!map.getSource('sea-boundary')) {
-        const seaFeatures = [...geoRef.current.values()].filter(f => SEA_ISO.has(f.properties?.ISO_A3));
-        map.addSource('sea-boundary', {
-          type: 'geojson',
-          data: { type: 'FeatureCollection', features: seaFeatures },
-        });
-        map.addLayer({
-          id: 'sea-boundary-line', type: 'line', source: 'sea-boundary',
-          paint: { 'line-color': '#00ffff', 'line-width': 1.2, 'line-opacity': 0.8 },
-        });
-        // Keep country boundary on top
-        if (map.getLayer('country-boundary-line')) map.moveLayer('country-boundary-line');
+      if (boundaryTilesRef.current.sea) {
+        // Already loaded — just re-add if removed
+        addRasterLayer(map, 'boundary-sea', 'boundary-layer-sea', boundaryTilesRef.current.sea);
+        if (map.getLayer('boundary-layer-country')) map.moveLayer('boundary-layer-country');
+      } else {
+        loadSEABoundary();
       }
     } else {
-      if (map.getLayer('sea-boundary-line')) map.removeLayer('sea-boundary-line');
-      if (map.getSource('sea-boundary'))     map.removeSource('sea-boundary');
+      if (map.getLayer('boundary-layer-sea')) map.removeLayer('boundary-layer-sea');
+      if (map.getSource('boundary-sea'))      map.removeSource('boundary-sea');
     }
-  }, []);
+  }, [loadSEABoundary, addRasterLayer]);
 
   const anyActive = LAYER_TYPES.some(lt => layers[lt.id].enabled);
   const canLoad   = tokenStatus === 'ok' && projectId.trim();
@@ -597,11 +604,9 @@ export default function App() {
             <div className="section-label">Overlay</div>
             <label className="checkbox-row">
               <input type="checkbox" checked={seaOn}
-                disabled={!geoReady}
+                disabled={!canLoad}
                 onChange={e => handleSea(e.target.checked)} />
-              <span className="checkbox-label">
-                {geoReady ? 'SEA country boundaries' : 'Loading boundaries…'}
-              </span>
+              <span className="checkbox-label">SEA country boundaries</span>
             </label>
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 20, height: 2, background: '#bf40ff', display: 'inline-block', borderRadius: 1 }} />
