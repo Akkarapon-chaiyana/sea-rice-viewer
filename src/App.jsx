@@ -1,24 +1,37 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import maplibregl from 'maplibre-gl';
 import './App.css';
+import ExportModal from './ExportModal';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const ASSET_PREFIX = 'projects/tony-1122/assets/NIE/rice/';
 const GEE_API      = 'https://earthengine.googleapis.com/v1';
+const GRID_STEP    = 0.45; // ~50 km in degrees
 
 const COUNTRIES = [
-  { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                         center: [100.5,  13.5], zoom: 5 },
-  { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', gaul: 'Myanmar',                          center: [ 96.0,  19.0], zoom: 5 },
-  { label: 'Vietnam',     slug: 'vietnam',     iso: 'VNM', gaul: 'Viet Nam',                         center: [106.0,  16.0], zoom: 5 },
-  { label: 'Laos',        slug: 'laos',        iso: 'LAO', gaul: "Lao People's Democratic Republic", center: [103.0,  18.0], zoom: 6 },
-  { label: 'Cambodia',    slug: 'cambodia',    iso: 'KHM', gaul: 'Cambodia',                         center: [105.0,  12.5], zoom: 6 },
-  { label: 'Philippines', slug: 'philippines', iso: 'PHL', gaul: 'Philippines',                      center: [122.0,  12.0], zoom: 5 },
-  { label: 'Malaysia',    slug: 'malaysia',    iso: 'MYS', gaul: 'Malaysia',                         center: [109.0,   3.5], zoom: 5 },
-  { label: 'Indonesia',   slug: 'indonesia',   iso: 'IDN', gaul: 'Indonesia',                        center: [113.0,  -1.0], zoom: 5 },
-  { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                center: [114.7,   4.5], zoom: 8 },
-  { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8 },
-  { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10 },
+  { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                         center: [100.5,  13.5], zoom: 5,  bbox: [ 97.3,  5.5, 105.7, 20.5] },
+  { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', gaul: 'Myanmar',                          center: [ 96.0,  19.0], zoom: 5,  bbox: [ 92.1,  9.6, 101.2, 28.5] },
+  { label: 'Vietnam',     slug: 'vietnam',     iso: 'VNM', gaul: 'Viet Nam',                         center: [106.0,  16.0], zoom: 5,  bbox: [102.1,  8.3, 109.5, 23.4] },
+  { label: 'Laos',        slug: 'laos',        iso: 'LAO', gaul: "Lao People's Democratic Republic", center: [103.0,  18.0], zoom: 6,  bbox: [100.1, 13.9, 107.7, 22.5] },
+  { label: 'Cambodia',    slug: 'cambodia',    iso: 'KHM', gaul: 'Cambodia',                         center: [105.0,  12.5], zoom: 6,  bbox: [102.3,  9.9, 107.7, 14.7] },
+  { label: 'Philippines', slug: 'philippines', iso: 'PHL', gaul: 'Philippines',                      center: [122.0,  12.0], zoom: 5,  bbox: [116.9,  4.6, 126.6, 20.5] },
+  { label: 'Malaysia',    slug: 'malaysia',    iso: 'MYS', gaul: 'Malaysia',                         center: [109.0,   3.5], zoom: 5,  bbox: [ 99.6,  0.8, 119.3,  7.4] },
+  { label: 'Indonesia',   slug: 'indonesia',   iso: 'IDN', gaul: 'Indonesia',                        center: [113.0,  -1.0], zoom: 5,  bbox: [ 95.0,-11.0, 141.0,  5.9] },
+  { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                center: [114.7,   4.5], zoom: 8,  bbox: [114.1,  4.0, 115.4,  5.1] },
+  { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8,  bbox: [124.0, -9.5, 127.4, -8.1] },
+  { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10, bbox: [103.6,  1.1, 104.1,  1.5] },
 ];
+
+// ── 50 km grid generator ─────────────────────────────────────────────────────
+function generate50kmGrid([west, south, east, north]) {
+  const features = [];
+  const s = GRID_STEP;
+  for (let lon = Math.floor(west / s) * s; lon <= east;  lon = +(lon + s).toFixed(6))
+    features.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[lon, south], [lon, north]] } });
+  for (let lat = Math.floor(south / s) * s; lat <= north; lat = +(lat + s).toFixed(6))
+    features.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[west, lat], [east, lat]] } });
+  return { type: 'FeatureCollection', features };
+}
 
 const SEA_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
 
@@ -246,6 +259,7 @@ export default function App() {
   const projectRef = useRef('');
   const layersRef  = useRef(initLayers());
   const seaOnRef   = useRef(false);
+  const gridOnRef  = useRef(false);
   const countryRef = useRef('Thailand');
   // Store boundary tile URLs so they can be restored after basemap switch
   const boundaryTilesRef  = useRef({ country: null, sea: null });
@@ -259,6 +273,8 @@ export default function App() {
   const [tokenStatus, setTokenStatus] = useState(null);
   const [layers,      setLayers]      = useState(initLayers);
   const [seaOn,       setSeaOn]       = useState(false);
+  const [gridOn,      setGridOn]      = useState(false);
+  const [exportOpen,  setExportOpen]  = useState(false);
 
   // ── Fetch a GEE map tile URL from an expression ──────────────────────────
   const fetchGEETileUrl = useCallback(async (expression, visOptions) => {
@@ -358,6 +374,8 @@ export default function App() {
             paint: { 'raster-opacity': s.enabled ? s.opacity : 0 } });
         }
       });
+      // Restore 50km grid
+      if (gridOnRef.current) applyGrid(map, countryRef.current);
       // Restore boundaries
       const { country: cUrl, sea: sUrl } = boundaryTilesRef.current;
       if (sUrl && seaOnRef.current) {
@@ -499,8 +517,9 @@ export default function App() {
       boundaryTilesRef.current.country = null;
     }
     if (co && tokenRef.current) loadCountryBoundary(co.gaul);
+    if (gridOn && map) applyGrid(map, val);
     refreshActive(val, year);
-  }, [year, refreshActive, loadCountryBoundary]);
+  }, [year, refreshActive, loadCountryBoundary, gridOn, applyGrid]);
 
   // ── Year change ───────────────────────────────────────────────────────────
   const handleYear = useCallback((e) => {
@@ -547,6 +566,30 @@ export default function App() {
       if (map.getSource('boundary-sea'))      map.removeSource('boundary-sea');
     }
   }, [loadSEABoundary, addRasterLayer]);
+
+  // ── Grid helpers ─────────────────────────────────────────────────────────
+  const applyGrid = useCallback((map, countryLabel) => {
+    if (map.getLayer('grid-layer')) map.removeLayer('grid-layer');
+    if (map.getSource('grid-src'))  map.removeSource('grid-src');
+    const co = COUNTRIES.find(c => c.label === countryLabel);
+    if (!co) return;
+    map.addSource('grid-src', { type: 'geojson', data: generate50kmGrid(co.bbox) });
+    map.addLayer({ id: 'grid-layer', type: 'line', source: 'grid-src',
+      paint: { 'line-color': '#ffffff', 'line-width': 0.5, 'line-opacity': 0.4 } });
+  }, []);
+
+  const handleGrid = useCallback((checked) => {
+    setGridOn(checked);
+    gridOnRef.current = checked;
+    const map = mapRef.current;
+    if (!map) return;
+    if (checked) {
+      applyGrid(map, country);
+    } else {
+      if (map.getLayer('grid-layer')) map.removeLayer('grid-layer');
+      if (map.getSource('grid-src'))  map.removeSource('grid-src');
+    }
+  }, [country, applyGrid]);
 
   const anyActive = LAYER_TYPES.some(lt => layers[lt.id].enabled);
   const canLoad   = tokenStatus === 'ok' && projectId.trim();
@@ -647,6 +690,11 @@ export default function App() {
                 onChange={e => handleSea(e.target.checked)} />
               <span className="checkbox-label">SEA country boundaries</span>
             </label>
+            <label className="checkbox-row">
+              <input type="checkbox" checked={gridOn}
+                onChange={e => handleGrid(e.target.checked)} />
+              <span className="checkbox-label">50 km × 50 km grid</span>
+            </label>
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 20, height: 2, background: '#bf40ff', display: 'inline-block', borderRadius: 1 }} />
               <span className="legend-swatch-label">Selected country</span>
@@ -690,11 +738,30 @@ export default function App() {
             ))}
           </div>
 
+          {/* Export */}
+          <div className="section">
+            <div className="section-label">Export</div>
+            <button className="btn btn-export" onClick={() => setExportOpen(true)}>
+              ↓ Export GeoTIFF (Python)
+            </button>
+          </div>
+
         </div>
       </aside>
 
       {/* Map */}
       <div className="map-container" ref={mapEl} />
+
+      {/* Export modal */}
+      {exportOpen && (
+        <ExportModal
+          country={country}
+          gaulName={COUNTRIES.find(c => c.label === country)?.gaul ?? country}
+          year={year}
+          projectId={projectId}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
     </div>
   );
 }
