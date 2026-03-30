@@ -12,17 +12,17 @@ const BOUNDARIES_URL =
   'https://raw.githubusercontent.com/martynafford/natural-earth-geojson/master/110m/cultural/ne_110m_admin_0_countries.json';
 
 const COUNTRIES = [
-  { label: 'Thailand',    slug: 'thailand',    iso: 'THA', center: [100.5,  13.5], zoom: 5 },
-  { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', center: [ 96.0,  19.0], zoom: 5 },
-  { label: 'Vietnam',     slug: 'vietnam',     iso: 'VNM', center: [106.0,  16.0], zoom: 5 },
-  { label: 'Laos',        slug: 'laos',        iso: 'LAO', center: [103.0,  18.0], zoom: 6 },
-  { label: 'Cambodia',    slug: 'cambodia',    iso: 'KHM', center: [105.0,  12.5], zoom: 6 },
-  { label: 'Philippines', slug: 'philippines', iso: 'PHL', center: [122.0,  12.0], zoom: 5 },
-  { label: 'Malaysia',    slug: 'malaysia',    iso: 'MYS', center: [109.0,   3.5], zoom: 5 },
-  { label: 'Indonesia',   slug: 'indonesia',   iso: 'IDN', center: [113.0,  -1.0], zoom: 5 },
-  { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', center: [114.7,   4.5], zoom: 8 },
-  { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', center: [125.5,  -8.8], zoom: 8 },
-  { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', center: [103.8,   1.35], zoom: 10 },
+  { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                          center: [100.5,  13.5], zoom: 5 },
+  { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', gaul: 'Myanmar',                           center: [ 96.0,  19.0], zoom: 5 },
+  { label: 'Vietnam',     slug: 'vietnam',     iso: 'VNM', gaul: 'Viet Nam',                          center: [106.0,  16.0], zoom: 5 },
+  { label: 'Laos',        slug: 'laos',        iso: 'LAO', gaul: "Lao People's Democratic Republic",  center: [103.0,  18.0], zoom: 6 },
+  { label: 'Cambodia',    slug: 'cambodia',    iso: 'KHM', gaul: 'Cambodia',                          center: [105.0,  12.5], zoom: 6 },
+  { label: 'Philippines', slug: 'philippines', iso: 'PHL', gaul: 'Philippines',                       center: [122.0,  12.0], zoom: 5 },
+  { label: 'Malaysia',    slug: 'malaysia',    iso: 'MYS', gaul: 'Malaysia',                          center: [109.0,   3.5], zoom: 5 },
+  { label: 'Indonesia',   slug: 'indonesia',   iso: 'IDN', gaul: 'Indonesia',                         center: [113.0,  -1.0], zoom: 5 },
+  { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                 center: [114.7,   4.5], zoom: 8 },
+  { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                       center: [125.5,  -8.8], zoom: 8 },
+  { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                         center: [103.8,   1.35], zoom: 10 },
 ];
 
 const YEARS = ['2019', '2020', '2021', '2022', '2023'];
@@ -90,11 +90,7 @@ const BASEMAPS = [
 ];
 
 // ── GEE expression builders ──────────────────────────────────────────────────
-// Build a GEE expression that:
-//  - Loads the image
-//  - Applies gte(50) + selfMask for Binary
-//  - Clips to country geometry (passed as GeoJSON constantValue)
-function buildExpression(assetPath, clipGeometry, isBinary) {
+function buildExpression(assetPath, gaulName, isBinary) {
   const loadExpr = {
     functionInvocationValue: {
       functionName: 'Image.load',
@@ -126,6 +122,29 @@ function buildExpression(assetPath, clipGeometry, isBinary) {
       }
     : loadExpr;
 
+  const clipExpr = {
+    functionInvocationValue: {
+      functionName: 'Collection.filter',
+      arguments: {
+        collection: {
+          functionInvocationValue: {
+            functionName: 'Collection.loadTable',
+            arguments: { tableId: { constantValue: 'FAO/GAUL/2015/level0' } },
+          },
+        },
+        filter: {
+          functionInvocationValue: {
+            functionName: 'Filter.eq',
+            arguments: {
+              name:  { constantValue: 'ADM0_NAME' },
+              value: { constantValue: gaulName },
+            },
+          },
+        },
+      },
+    },
+  };
+
   return {
     result: '0',
     values: {
@@ -134,7 +153,7 @@ function buildExpression(assetPath, clipGeometry, isBinary) {
           functionName: 'Image.clip',
           arguments: {
             input:    imgExpr,
-            geometry: { geometryValue: clipGeometry },
+            geometry: clipExpr,
           },
         },
       },
@@ -319,10 +338,6 @@ export default function App() {
     const countryObj = COUNTRIES.find(c => c.label === countryVal);
     if (!lt || !countryObj) return;
 
-    // Get country geometry from cached GeoJSON for clip
-    const feature     = geoRef.current?.get(countryObj.iso);
-    const clipGeometry = feature?.geometry ?? null;
-
     const assetPath = lt.assetFn(countryObj.slug, yearVal);
     setLayers(prev => ({ ...prev, [typeId]: { ...prev[typeId], loading: true, error: null } }));
 
@@ -335,7 +350,7 @@ export default function App() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          expression:          buildExpression(assetPath, clipGeometry, lt.isBinary),
+          expression:          buildExpression(assetPath, countryObj.gaul, lt.isBinary),
           visualizationOptions: lt.vis,
           fileFormat:          'PNG',
         }),
