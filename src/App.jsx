@@ -502,6 +502,30 @@ export default function App() {
     });
   }, [loadLayer, removeLayerFromMap]);
 
+  // ── Grid helpers ─────────────────────────────────────────────────────────
+  const applyGrid = useCallback((map, countryLabel) => {
+    if (map.getLayer('grid-layer')) map.removeLayer('grid-layer');
+    if (map.getSource('grid-src'))  map.removeSource('grid-src');
+    const co = COUNTRIES.find(c => c.label === countryLabel);
+    if (!co) return;
+    map.addSource('grid-src', { type: 'geojson', data: generate50kmGrid(co.bbox) });
+    map.addLayer({ id: 'grid-layer', type: 'line', source: 'grid-src',
+      paint: { 'line-color': '#ffffff', 'line-width': 0.5, 'line-opacity': 0.4 } });
+  }, []);
+
+  const handleGrid = useCallback((checked) => {
+    setGridOn(checked);
+    gridOnRef.current = checked;
+    const map = mapRef.current;
+    if (!map) return;
+    if (checked) {
+      applyGrid(map, country);
+    } else {
+      if (map.getLayer('grid-layer')) map.removeLayer('grid-layer');
+      if (map.getSource('grid-src'))  map.removeSource('grid-src');
+    }
+  }, [country, applyGrid]);
+
   // ── Country change ────────────────────────────────────────────────────────
   const handleCountry = useCallback((e) => {
     const val = e.target.value;
@@ -566,30 +590,6 @@ export default function App() {
       if (map.getSource('boundary-sea'))      map.removeSource('boundary-sea');
     }
   }, [loadSEABoundary, addRasterLayer]);
-
-  // ── Grid helpers ─────────────────────────────────────────────────────────
-  const applyGrid = useCallback((map, countryLabel) => {
-    if (map.getLayer('grid-layer')) map.removeLayer('grid-layer');
-    if (map.getSource('grid-src'))  map.removeSource('grid-src');
-    const co = COUNTRIES.find(c => c.label === countryLabel);
-    if (!co) return;
-    map.addSource('grid-src', { type: 'geojson', data: generate50kmGrid(co.bbox) });
-    map.addLayer({ id: 'grid-layer', type: 'line', source: 'grid-src',
-      paint: { 'line-color': '#ffffff', 'line-width': 0.5, 'line-opacity': 0.4 } });
-  }, []);
-
-  const handleGrid = useCallback((checked) => {
-    setGridOn(checked);
-    gridOnRef.current = checked;
-    const map = mapRef.current;
-    if (!map) return;
-    if (checked) {
-      applyGrid(map, country);
-    } else {
-      if (map.getLayer('grid-layer')) map.removeLayer('grid-layer');
-      if (map.getSource('grid-src'))  map.removeSource('grid-src');
-    }
-  }, [country, applyGrid]);
 
   const anyActive = LAYER_TYPES.some(lt => layers[lt.id].enabled);
   const canLoad   = tokenStatus === 'ok' && projectId.trim();
