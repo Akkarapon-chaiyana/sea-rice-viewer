@@ -112,7 +112,7 @@ function buildExpression(assetPath, clipGeometry, isBinary) {
                 functionName: 'Image.gte',
                 arguments: {
                   input:  loadExpr,
-                  image1: { constantValue: 50 },
+                  image2: { constantValue: 50 },
                 },
               },
             },
