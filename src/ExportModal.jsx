@@ -232,8 +232,14 @@ export default function ExportModal({
   }, [script, country, year]);
 
   return (
-    <div className="modal-overlay" onClick={handleClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+    /* When selecting tiles, overlay must NOT intercept map clicks */
+    <div
+      className="modal-overlay"
+      onClick={tileSelectActive ? undefined : handleClose}
+      style={{ pointerEvents: tileSelectActive ? 'none' : undefined }}
+    >
+      {/* The modal panel always captures its own clicks */}
+      <div className="modal" style={{ pointerEvents: 'all' }} onClick={e => e.stopPropagation()}>
 
         {/* Title bar */}
         <div className="modal-titlebar">
@@ -293,7 +299,7 @@ export default function ExportModal({
                 {/* Tile count row */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <span style={{ fontSize: 11, color: '#aaaacc' }}>
-                    <span style={{ color: '#7b8cde', fontWeight: 600, fontSize: 14 }}>{activeTiles.length}</span>
+                    <span style={{ color: '#ff8c00', fontWeight: 600, fontSize: 14 }}>{activeTiles.length}</span>
                     <span style={{ color: '#666688' }}> tiles selected (SEA grid)</span>
                   </span>
                   <div style={{ display: 'flex', gap: 5 }}>
@@ -306,18 +312,23 @@ export default function ExportModal({
 
                 {/* Map select toggle */}
                 <button
-                  className={`btn ${tileSelectActive ? 'btn-sign-in signed-in' : 'btn-export'}`}
-                  style={{ width: '100%', marginBottom: 6 }}
+                  className="btn btn-export"
+                  style={{
+                    width: '100%', marginBottom: 6,
+                    background: tileSelectActive ? '#b85e00' : undefined,
+                    borderColor: tileSelectActive ? '#ff8c00' : undefined,
+                    color: tileSelectActive ? '#fff' : undefined,
+                  }}
                   onClick={() => onTileSelectToggle(!tileSelectActive)}>
                   {tileSelectActive
-                    ? '✓ Selecting on map — click to finish'
-                    : '🗺 Click tiles on map to select / deselect'}
+                    ? '🟠 Selecting… click tiles on map · click here to finish'
+                    : '🗺  Select tiles on map'}
                 </button>
 
                 {tileSelectActive && (
-                  <div style={{ fontSize: 10, color: '#7b8cde', lineHeight: 1.4 }}>
-                    Blue tiles = selected for export. Click any tile to toggle. Enable the
-                    50 km grid overlay to see tile boundaries clearly.
+                  <div style={{ fontSize: 10, color: '#ff8c00', lineHeight: 1.5 }}>
+                    Orange = selected for export. Click any cell to toggle. The map is now
+                    interactive — this panel stays visible but is click-through.
                   </div>
                 )}
 

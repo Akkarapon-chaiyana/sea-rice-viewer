@@ -410,7 +410,7 @@ export default function App() {
         map.addLayer({ id: 'tile-select-fill', type: 'fill', source: 'tile-select-src',
           paint: { 'fill-color': ['case', ['get', 'selected'], '#7b8cde', '#8899cc'], 'fill-opacity': ['case', ['get', 'selected'], 0.40, 0.07] } });
         map.addLayer({ id: 'tile-select-line', type: 'line', source: 'tile-select-src',
-          paint: { 'line-color': '#7b8cde', 'line-width': 0.8, 'line-opacity': 0.55 } });
+          paint: { 'line-color': '#ff8c00', 'line-width': 1.0, 'line-opacity': 0.60 } });
         setTimeout(() => { if (updateTileGridRef.current) updateTileGridRef.current(); }, 50);
       }
     });
@@ -620,11 +620,11 @@ export default function App() {
         map.addSource('tile-select-src', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({ id: 'tile-select-fill', type: 'fill', source: 'tile-select-src',
           paint: {
-            'fill-color':   ['case', ['get', 'selected'], '#7b8cde', '#8899cc'],
-            'fill-opacity': ['case', ['get', 'selected'], 0.40,       0.07],
+            'fill-color':   ['case', ['get', 'selected'], '#ff8c00', '#ffcc88'],
+            'fill-opacity': ['case', ['get', 'selected'], 0.50,       0.08],
           } });
         map.addLayer({ id: 'tile-select-line', type: 'line', source: 'tile-select-src',
-          paint: { 'line-color': '#7b8cde', 'line-width': 0.8, 'line-opacity': 0.55 } });
+          paint: { 'line-color': '#ff8c00', 'line-width': 1.0, 'line-opacity': 0.60 } });
       }
 
       // Viewport update on pan/zoom
@@ -865,6 +865,25 @@ export default function App() {
 
       {/* Map */}
       <div className="map-container" ref={mapEl} />
+
+      {/* Floating tile-select bar — shown over map when selecting tiles */}
+      {tileSelectActive && (
+        <div className="tile-select-bar">
+          <span className="tile-select-bar-count">
+            🟠 <strong>{selectedTiles.size}</strong> tiles selected
+          </span>
+          <button className="tile-select-bar-btn"
+            onClick={() => {
+              const co = COUNTRIES.find(c => c.label === country);
+              const cells = co ? generateCellsForBbox(co.bbox) : [];
+              setSelectedTiles(new Map(cells.map(c => [c.id, c])));
+            }}>All ({country})</button>
+          <button className="tile-select-bar-btn"
+            onClick={() => setSelectedTiles(new Map())}>Clear</button>
+          <button className="tile-select-bar-done"
+            onClick={() => setTileSelectActive(false)}>✓ Done</button>
+        </div>
+      )}
 
       {/* Export modal */}
       {exportOpen && (

@@ -18,11 +18,11 @@ export function cellBbox(lon, lat) {
 
 /**
  * Generate GeoJSON features for grid cells covering the map viewport.
- * Only runs when zoom >= 5; caps at 2500 cells to stay performant.
+ * Only runs when zoom >= 4; caps at 2500 cells to stay performant.
  */
 export function generateVisibleGrid(map, selectedIds) {
   const zoom = map.getZoom();
-  if (zoom < 5) return [];
+  if (zoom < 4) return [];
 
   const b = map.getBounds();
   const west  = Math.floor(b.getWest() / CELL_DEG) * CELL_DEG;

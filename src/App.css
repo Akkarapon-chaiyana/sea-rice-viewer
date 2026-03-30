@@ -430,3 +430,58 @@
   animation: spin 0.8s linear infinite;
   display: inline-block;
 }
+
+/* ── Tile-select floating bar ────────────────────────────────────────────── */
+.tile-select-bar {
+  position: absolute;
+  bottom: 36px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(10, 10, 25, 0.92);
+  border: 1.5px solid #ff8c00;
+  border-radius: 24px;
+  padding: 7px 16px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 20px rgba(255,140,0,0.35);
+  pointer-events: all;
+  white-space: nowrap;
+}
+
+.tile-select-bar-count {
+  font-size: 13px;
+  color: #ffcc88;
+  margin-right: 4px;
+}
+.tile-select-bar-count strong {
+  color: #ff8c00;
+  font-size: 15px;
+}
+
+.tile-select-bar-btn {
+  background: #1a1a2e;
+  color: #ffcc88;
+  border: 1px solid #553300;
+  border-radius: 12px;
+  padding: 3px 12px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.tile-select-bar-btn:hover { background: #2a2010; border-color: #ff8c00; }
+
+.tile-select-bar-done {
+  background: #ff8c00;
+  color: #000;
+  border: none;
+  border-radius: 12px;
+  padding: 4px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.tile-select-bar-done:hover { background: #ffa833; }
