@@ -4,8 +4,8 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 const LAYER_OPTIONS = [
   { id: 'Mean',   label: '5-Fold Mean Probability', suffix: 'SEA_Avg',  extra: '' },
   { id: 'Std',    label: 'Standard Deviation',       suffix: 'SEA_Std',  extra: '' },
-  { id: 'Binary', label: 'Binary (prob ≥ 50%)',       suffix: 'SEA_Avg',  outSuffix: 'SEA_Binary', extra: 'binary' },
-  { id: 'Pseudo', label: 'Pseudo-Labeling',           suffix: 'SEA_Pseu', extra: '' },
+  { id: 'Binary', label: 'Binary (prob ≥ 50%)',       suffix: 'SEA_Avg',  outSuffix: 'SEA_Binary', extra: 'binary', clearNodata: true },
+  { id: 'Pseudo', label: 'Pseudo-Labeling',           suffix: 'SEA_Pseu', extra: '',                                clearNodata: true },
 ];
 
 const SCALES = [10, 30, 100, 250, 1000];
@@ -208,7 +208,7 @@ function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outpu
       `    fpath    = os.path.join(OUTPUT_DIR, f'${outSuf(l)}_${country}_${year}{suf}.tif')\n` +
       `    print(f'  [{i+1}/{len(TILES)}] {tw},{ts} → {te},{tn}')\n` +
       `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(sub_geom)\n` +
-      `    download_image(img, fpath, sub_geom${l.extra === 'binary' ? ', clear_nodata=True' : ''})`
+      `    download_image(img, fpath, sub_geom${l.clearNodata ? ', clear_nodata=True' : ''})`
     ).join('\n') +
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
@@ -244,10 +244,10 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
       `        region = ee.Geometry.Rectangle([sw, ss, se, sn])\n` +
       `        suf    = f'_s{j:02d}' if len(subs) > 1 else ''\n` +
       `        fpath  = os.path.join(OUTPUT_DIR, f'${outSuf(l)}_${country}_${year}_{tid}{suf}.tif')\n` +
-      `        download_image(img.clip(region), fpath, region${l.extra === 'binary' ? ', clear_nodata=True' : ''})\n` +
+      `        download_image(img.clip(region), fpath, region${l.clearNodata ? ', clear_nodata=True' : ''})\n` +
       `        sub_paths.append(fpath)\n` +
       `    out_path = os.path.join(OUTPUT_DIR, f'${outSuf(l)}_${country}_${year}_{tid}.tif')\n` +
-      `    mosaic_subtiles(sub_paths, out_path${l.extra === 'binary' ? ', clear_nodata=True' : ''})`
+      `    mosaic_subtiles(sub_paths, out_path${l.clearNodata ? ', clear_nodata=True' : ''})`
     ).join('\n') +
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
