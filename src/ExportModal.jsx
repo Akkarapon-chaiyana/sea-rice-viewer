@@ -252,6 +252,16 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
 
+// ── requirements_download.txt content (mirrored from repo root) ──────────────
+const REQUIREMENTS_TXT =
+`# Requirements for SEA Rice Viewer — Local Download scripts
+# Install with:  pip install -r requirements_download.txt
+
+earthengine-api>=0.1.370   # Google Earth Engine Python API
+requests>=2.28.0            # HTTP download of GeoTIFF tiles
+rasterio>=1.3.0             # Sub-tile mosaicking and nodata handling
+`;
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ExportModal({
   country, gaulName, year, projectId,
@@ -303,6 +313,16 @@ export default function ExportModal({
     a.click();
     URL.revokeObjectURL(url);
   }, [script, country, year]);
+
+  const handleDownloadRequirements = useCallback(() => {
+    const blob = new Blob([REQUIREMENTS_TXT], { type: 'text/plain' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = 'requirements_download.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
 
   return (
     <div className="modal-overlay" onClick={handleClose}>
@@ -419,6 +439,35 @@ export default function ExportModal({
                 <div style={{ fontSize: 10, color: '#7b8cde', marginTop: 4, lineHeight: 1.5 }}>
                   Uses <code style={{ background: '#1a1a32', padding: '1px 4px', borderRadius: 3 }}>getDownloadURL()</code>
                   — direct download to local disk. Suitable for tiles up to ~100 MB. For large areas use Drive.
+                </div>
+
+                {/* Installation requirements block */}
+                <div style={{
+                  marginTop: 10, padding: '10px 12px',
+                  background: '#0d0d1f', border: '1px solid #2a2a4a', borderRadius: 6,
+                }}>
+                  <div style={{ fontSize: 11, color: '#ff8c00', fontWeight: 700, marginBottom: 6 }}>
+                    📦 Required libraries
+                  </div>
+                  <code style={{
+                    display: 'block', fontSize: 10, color: '#c8d0ff',
+                    background: '#13132a', padding: '6px 10px', borderRadius: 4,
+                    marginBottom: 8, userSelect: 'all',
+                  }}>
+                    pip install earthengine-api requests rasterio
+                  </code>
+                  <div style={{ fontSize: 10, color: '#666688', lineHeight: 1.6 }}>
+                    <span style={{ color: '#7b8cde' }}>earthengine-api</span> — authenticate &amp; query GEE&emsp;
+                    <span style={{ color: '#7b8cde' }}>requests</span> — stream tiles&emsp;
+                    <span style={{ color: '#7b8cde' }}>rasterio</span> — mosaic &amp; nodata fix
+                  </div>
+                  <button
+                    className="btn btn-copy"
+                    style={{ marginTop: 8, fontSize: 10, padding: '4px 10px' }}
+                    onClick={handleDownloadRequirements}
+                  >
+                    ↓ requirements_download.txt
+                  </button>
                 </div>
               </>
             )}
