@@ -40,7 +40,7 @@ function layerImg(l) {
     // Start from a zero image, paint 1 where probability >= 50.
     // This guarantees 0 everywhere (non-rice AND nodata) and 1 for rice — no masked pixels.
     return assetLine + '\n' +
-      `img   = ee.Image(0).where(ee.Image(asset).unmask(0).gte(50), 1)`;
+      `img   = ee.Image(0).where(ee.Image(asset).unmask(0, False).gte(50), 1)`;
   }
   return assetLine + '\n' + `img   = ee.Image(asset)`;
 }
