@@ -485,3 +485,31 @@
   transition: background 0.15s;
 }
 .tile-select-bar-done:hover { background: #ffa833; }
+
+/* ── Export section sublabel ─────────────────────────────────────────────── */
+.section-sublabel {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #555577;
+  margin-bottom: 5px;
+}
+
+/* ── Tile-select sidebar button ──────────────────────────────────────────── */
+.btn-tile-select {
+  width: 100%;
+  padding: 7px 10px;
+  background: #12122a;
+  color: #ffcc88;
+  border: 1.5px solid #553300;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-tile-select:hover {
+  background: #1e1810;
+  border-color: #ff8c00;
+}

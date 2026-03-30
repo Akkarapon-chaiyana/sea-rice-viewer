@@ -855,6 +855,31 @@ export default function App() {
           {/* Export */}
           <div className="section">
             <div className="section-label">Export</div>
+
+            {/* Step 1 — select tiles on map */}
+            <div className="section-sublabel">Step 1 — Select tiles (optional)</div>
+            <button
+              className="btn btn-tile-select"
+              style={tileSelectActive ? { background: '#b85e00', borderColor: '#ff8c00', color: '#fff' } : {}}
+              onClick={() => setTileSelectActive(v => !v)}>
+              {tileSelectActive
+                ? `🟠 Selecting… ${selectedTiles.size} tile${selectedTiles.size !== 1 ? 's' : ''} · click to finish`
+                : '🗺  Select tiles on map'}
+            </button>
+
+            {/* Quick All / Clear when tiles are selected */}
+            {selectedTiles.size > 0 && !tileSelectActive && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5 }}>
+                <span style={{ fontSize: 10, color: '#ff8c00', flex: 1 }}>
+                  {selectedTiles.size} tile{selectedTiles.size !== 1 ? 's' : ''} selected
+                </span>
+                <button className="tile-select-bar-btn" style={{ fontSize: 9 }}
+                  onClick={() => setSelectedTiles(new Map())}>Clear</button>
+              </div>
+            )}
+
+            {/* Step 2 — open export modal */}
+            <div className="section-sublabel" style={{ marginTop: 10 }}>Step 2 — Generate script</div>
             <button className="btn btn-export" onClick={() => setExportOpen(true)}>
               ↓ Export GeoTIFF (Python)
             </button>
@@ -893,15 +918,12 @@ export default function App() {
           year={year}
           projectId={projectId}
           selectedTiles={selectedTiles}
-          tileSelectActive={tileSelectActive}
-          onTileSelectToggle={setTileSelectActive}
           onSelectAllTiles={() => {
-            const co    = COUNTRIES.find(c => c.label === country);
-            const cells = co ? generateCellsForBbox(co.bbox) : [];
-            setSelectedTiles(new Map(cells.map(c => [c.id, c])));
+            const co = COUNTRIES.find(c => c.label === country);
+            setSelectedTiles(new Map((co ? generateCellsForBbox(co.bbox) : []).map(c => [c.id, c])));
           }}
           onSelectNoTiles={() => setSelectedTiles(new Map())}
-          onClose={() => { setTileSelectActive(false); setExportOpen(false); }}
+          onClose={() => setExportOpen(false)}
         />
       )}
     </div>

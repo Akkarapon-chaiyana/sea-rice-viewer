@@ -173,8 +173,8 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ExportModal({
   country, gaulName, year, projectId,
-  selectedTiles, tileSelectActive,
-  onTileSelectToggle, onSelectAllTiles, onSelectNoTiles,
+  selectedTiles,
+  onSelectAllTiles, onSelectNoTiles,
   onClose,
 }) {
   const [selected,     setSelected]     = useState({ Mean: true, Std: false, Binary: false, Pseudo: false });
@@ -185,17 +185,8 @@ export default function ExportModal({
   const [outputDir,    setOutputDir]    = useState('./sea_rice_output');
   const [copied,       setCopied]       = useState(false);
 
-  // Deactivate tile select when switching away from tiles mode
-  const handleExportTarget = useCallback((val) => {
-    setExportTarget(val);
-    if (val !== 'tiles' && tileSelectActive) onTileSelectToggle(false);
-  }, [tileSelectActive, onTileSelectToggle]);
-
-  // Deactivate tile select + close
-  const handleClose = useCallback(() => {
-    if (tileSelectActive) onTileSelectToggle(false);
-    onClose();
-  }, [tileSelectActive, onTileSelectToggle, onClose]);
+  const handleExportTarget = useCallback((val) => setExportTarget(val), []);
+  const handleClose        = useCallback(() => onClose(), [onClose]);
 
   const selectedLayers = LAYER_OPTIONS.filter(l => selected[l.id]);
   // selectedTiles is a Map<id, {id, bbox}> — convert to array for script generation
@@ -232,14 +223,8 @@ export default function ExportModal({
   }, [script, country, year]);
 
   return (
-    /* When selecting tiles, overlay must NOT intercept map clicks */
-    <div
-      className="modal-overlay"
-      onClick={tileSelectActive ? undefined : handleClose}
-      style={{ pointerEvents: tileSelectActive ? 'none' : undefined }}
-    >
-      {/* The modal panel always captures its own clicks */}
-      <div className="modal" style={{ pointerEvents: 'all' }} onClick={e => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={handleClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
 
         {/* Title bar */}
         <div className="modal-titlebar">
@@ -296,11 +281,12 @@ export default function ExportModal({
 
             {exportTarget === 'tiles' && (
               <div style={{ background: '#0d0d1f', border: '1px solid #2a2a4a', borderRadius: 6, padding: '10px 12px' }}>
-                {/* Tile count row */}
+
+                {/* Tile count + All/None */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <span style={{ fontSize: 11, color: '#aaaacc' }}>
-                    <span style={{ color: '#ff8c00', fontWeight: 600, fontSize: 14 }}>{activeTiles.length}</span>
-                    <span style={{ color: '#666688' }}> tiles selected (SEA grid)</span>
+                  <span>
+                    <span style={{ color: '#ff8c00', fontWeight: 700, fontSize: 15 }}>{activeTiles.length}</span>
+                    <span style={{ color: '#666688', fontSize: 11 }}> tiles selected</span>
                   </span>
                   <div style={{ display: 'flex', gap: 5 }}>
                     <button className="scale-btn" style={{ padding: '2px 10px', fontSize: 10 }}
@@ -310,31 +296,16 @@ export default function ExportModal({
                   </div>
                 </div>
 
-                {/* Map select toggle */}
-                <button
-                  className="btn btn-export"
-                  style={{
-                    width: '100%', marginBottom: 6,
-                    background: tileSelectActive ? '#b85e00' : undefined,
-                    borderColor: tileSelectActive ? '#ff8c00' : undefined,
-                    color: tileSelectActive ? '#fff' : undefined,
-                  }}
-                  onClick={() => onTileSelectToggle(!tileSelectActive)}>
-                  {tileSelectActive
-                    ? '🟠 Selecting… click tiles on map · click here to finish'
-                    : '🗺  Select tiles on map'}
-                </button>
-
-                {tileSelectActive && (
-                  <div style={{ fontSize: 10, color: '#ff8c00', lineHeight: 1.5 }}>
-                    Orange = selected for export. Click any cell to toggle. The map is now
-                    interactive — this panel stays visible but is click-through.
+                {/* Guidance */}
+                {activeTiles.length === 0 ? (
+                  <div style={{ fontSize: 10, color: '#ff8c00', lineHeight: 1.5, padding: '6px 8px',
+                    background: '#1a0e00', borderRadius: 4, border: '1px solid #553300' }}>
+                    ← Close this panel and use <strong>🗺 Select tiles on map</strong> in the
+                    sidebar, then reopen Export.
                   </div>
-                )}
-
-                {activeTiles.length === 0 && (
-                  <div className="auth-status error" style={{ marginTop: 4 }}>
-                    No tiles selected — click tiles on the map or use <strong>All</strong>.
+                ) : (
+                  <div style={{ fontSize: 10, color: '#888899', lineHeight: 1.5 }}>
+                    Orange tiles on map = selected. Use the sidebar to add/remove tiles.
                   </div>
                 )}
               </div>
