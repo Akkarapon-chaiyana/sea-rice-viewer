@@ -4,11 +4,14 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 const LAYER_OPTIONS = [
   { id: 'Mean',   label: '5-Fold Mean Probability', suffix: 'SEA_Avg',  extra: '' },
   { id: 'Std',    label: 'Standard Deviation',       suffix: 'SEA_Std',  extra: '' },
-  { id: 'Binary', label: 'Binary (prob ≥ 50%)',       suffix: 'SEA_Avg',  extra: 'binary' },
+  { id: 'Binary', label: 'Binary (prob ≥ 50%)',       suffix: 'SEA_Avg',  outSuffix: 'SEA_Binary', extra: 'binary' },
   { id: 'Pseudo', label: 'Pseudo-Labeling',           suffix: 'SEA_Pseu', extra: '' },
 ];
 
 const SCALES = [10, 30, 100, 250, 1000];
+
+// Output filename prefix: binary uses SEA_Binary instead of SEA_Avg
+const outSuf = l => l.outSuffix ?? l.suffix;
 
 // ── Script helpers ────────────────────────────────────────────────────────────
 function scriptHeader(mode, country, year, scale, projectId) {
@@ -32,12 +35,14 @@ function scriptHeader(mode, country, year, scale, projectId) {
 }
 
 function layerImg(l) {
-  // Binary: .gte(50).unmask(0, False)  →  1 = rice, 0 = non-rice / nodata globally (sameFootprint=False)
-  const mask = l.extra === 'binary' ? '.gte(50).unmask(0, False)' : '';
-  return (
-    `asset = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'\n` +
-    `img   = ee.Image(asset)${mask}`
-  );
+  const assetLine = `asset = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'`;
+  if (l.extra === 'binary') {
+    // Start from a zero image, paint 1 where probability >= 50.
+    // This guarantees 0 everywhere (non-rice AND nodata) and 1 for rice — no masked pixels.
+    return assetLine + '\n' +
+      `img   = ee.Image(0).where(ee.Image(asset).gte(50), 1)`;
+  }
+  return assetLine + '\n' + `img   = ee.Image(asset)`;
 }
 
 // Google Drive — whole country
@@ -56,7 +61,7 @@ function genDriveCountry({ country, gaulName, year, scale, folder, selectedLayer
     selectedLayers.map(l =>
       `\n# ── ${l.label}\n` +
       layerImg(l) + `.clip(geometry)\n` +
-      `desc  = f'${l.suffix}_{country}_{year}'\n` +
+      `desc  = f'${outSuf(l)}_{country}_{year}'\n` +
       `task  = ee.batch.Export.image.toDrive(\n` +
       `    image=img, description=desc, folder=OUTPUT_FOLDER,\n` +
       `    fileNamePrefix=desc, region=geometry,\n` +
@@ -90,7 +95,7 @@ function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTil
       `    w, s, e, n = tile['bbox']\n` +
       `    region = ee.Geometry.Rectangle([w, s, e, n])\n` +
       `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(region)\n` +
-      `    desc   = f'${l.suffix}_${country}_${year}_{tid}'\n` +
+      `    desc   = f'${outSuf(l)}_${country}_${year}_{tid}'\n` +
       `    task   = ee.batch.Export.image.toDrive(\n` +
       `        image=img, description=desc, folder=OUTPUT_FOLDER,\n` +
       `        fileNamePrefix=desc, region=region,\n` +
@@ -189,7 +194,7 @@ function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outpu
       `for i, (tw, ts, te, tn) in enumerate(TILES):\n` +
       `    sub_geom = ee.Geometry.Rectangle([tw, ts, te, tn]).intersection(geometry)\n` +
       `    suf      = f'_t{i:03d}' if len(TILES) > 1 else ''\n` +
-      `    fpath    = os.path.join(OUTPUT_DIR, f'${l.suffix}_${country}_${year}{suf}.tif')\n` +
+      `    fpath    = os.path.join(OUTPUT_DIR, f'${outSuf(l)}_${country}_${year}{suf}.tif')\n` +
       `    print(f'  [{i+1}/{len(TILES)}] {tw},{ts} → {te},{tn}')\n` +
       `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(sub_geom)\n` +
       `    download_image(img, fpath, sub_geom)`
@@ -227,10 +232,10 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
       `    for j, (sw, ss, se, sn) in enumerate(subs):\n` +
       `        region = ee.Geometry.Rectangle([sw, ss, se, sn])\n` +
       `        suf    = f'_s{j:02d}' if len(subs) > 1 else ''\n` +
-      `        fpath  = os.path.join(OUTPUT_DIR, f'${l.suffix}_${country}_${year}_{tid}{suf}.tif')\n` +
+      `        fpath  = os.path.join(OUTPUT_DIR, f'${outSuf(l)}_${country}_${year}_{tid}{suf}.tif')\n` +
       `        download_image(img.clip(region), fpath, region)\n` +
       `        sub_paths.append(fpath)\n` +
-      `    out_path = os.path.join(OUTPUT_DIR, f'${l.suffix}_${country}_${year}_{tid}.tif')\n` +
+      `    out_path = os.path.join(OUTPUT_DIR, f'${outSuf(l)}_${country}_${year}_{tid}.tif')\n` +
       `    mosaic_subtiles(sub_paths, out_path)`
     ).join('\n') +
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
