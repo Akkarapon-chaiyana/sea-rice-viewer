@@ -37,10 +37,11 @@ function scriptHeader(mode, country, year, scale, projectId) {
 function layerImg(l) {
   const assetLine = `asset = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'`;
   if (l.extra === 'binary') {
-    // Start from a zero image, paint 1 where probability >= 50.
-    // This guarantees 0 everywhere (non-rice AND nodata) and 1 for rice — no masked pixels.
+    // gte(50) gives 1 (rice) or 0 (not rice), masked where the asset has no data.
+    // unmask(0, False) fills ALL masked pixels with 0 globally (sameFootprint=False),
+    // so the output is fully unmasked: 1 = rice, 0 = non-rice or no-data coverage.
     return assetLine + '\n' +
-      `img   = ee.Image(0).where(ee.Image(asset).unmask(0, False).gte(50), 1)`;
+      `img   = ee.Image(asset).gte(50).unmask(0, False)`;
   }
   return assetLine + '\n' + `img   = ee.Image(asset)`;
 }
