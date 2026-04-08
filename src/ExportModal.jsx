@@ -261,7 +261,8 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
 
-// Merge tiles — combine downloaded tile GeoTIFFs into one file per layer
+// Merge tiles — combine downloaded tile GeoTIFFs into one file per layer (GDAL)
+// Uses BuildVRT + Translate: no full in-memory load, single-pass, LZW-compressed output.
 function genMergeScript({ country, year, selectedLayers, outputDir, exportTarget }) {
   const dir = outputDir || './sea_rice_output';
   // country-mode tiles are named _t000, _t001 …; grid-tile-mode tiles use the tile ID
@@ -269,38 +270,43 @@ function genMergeScript({ country, year, selectedLayers, outputDir, exportTarget
   return (
     '#!/usr/bin/env python3\n' +
     '"""\n' +
-    'SEA Rice Viewer — Merge Script\n' +
-    `Merges downloaded tile GeoTIFFs into one file per layer.\n` +
+    'SEA Rice Viewer — Merge Script (GDAL)\n' +
+    'Merges downloaded tile GeoTIFFs into one file per layer.\n' +
     `Country : ${country}\n` +
     `Year    : ${year}\n` +
+    '\n' +
+    'Requires GDAL Python bindings:\n' +
+    '  conda install -c conda-forge gdal   # recommended\n' +
+    '  pip install gdal                    # alternative\n' +
     '"""\n' +
     'import os, glob\n' +
-    'import rasterio\n' +
-    'from rasterio.merge import merge\n\n' +
-    `COUNTRY    = '${country}'\n` +
-    `YEAR       = ${year}\n` +
+    'from osgeo import gdal\n\n' +
+    'gdal.UseExceptions()\n\n' +
     `OUTPUT_DIR = '${dir}'\n\n` +
-    `print(f'Merging tiles for ${country} (${year}) ...')\n` +
+    `print('Merging tiles for ${country} (${year}) ...')\n` +
     selectedLayers.map(l => {
       const suf = outSuf(l);
       return (
         `\n# ── ${l.label}\n` +
-        `pattern = os.path.join(OUTPUT_DIR, '${suf}_${country}_${year}${patternSuffix}')\n` +
-        `files   = sorted(glob.glob(pattern))\n` +
+        `pattern  = os.path.join(OUTPUT_DIR, '${suf}_${country}_${year}${patternSuffix}')\n` +
+        `files    = sorted(glob.glob(pattern))\n` +
         `if not files:\n` +
-        `    print(f'  [${l.label}] No tiles found matching: {pattern}')\n` +
+        `    print('  [${l.label}] No tiles found matching:', pattern)\n` +
         `else:\n` +
         `    print(f'  [${l.label}] Merging {len(files)} tile(s) ...')\n` +
-        `    srcs              = [rasterio.open(f) for f in files]\n` +
-        `    mosaic, transform = merge(srcs)\n` +
-        `    profile           = srcs[0].profile.copy()\n` +
-        `    profile.update({'width': mosaic.shape[2], 'height': mosaic.shape[1],\n` +
-        `                    'transform': transform${l.clearNodata ? ", 'nodata': None" : ''}})\n` +
-        `    for src in srcs: src.close()\n` +
-        `    out_path = os.path.join(OUTPUT_DIR, f'${suf}_${country}_{year}_merged.tif')\n` +
-        `    with rasterio.open(out_path, 'w', **profile) as dst:\n` +
-        `        dst.write(mosaic)\n` +
-        `    print(f'    → {os.path.basename(out_path)}')\n`
+        `    out_path = os.path.join(OUTPUT_DIR, '${suf}_${country}_${year}_merged.tif')\n` +
+        `    vrt      = gdal.BuildVRT('', files)\n` +
+        `    gdal.Translate(out_path, vrt, format='GTiff',\n` +
+        `                   creationOptions=['COMPRESS=LZW', 'TILED=YES', 'BIGTIFF=IF_SAFER'])\n` +
+        `    vrt = None  # flush & close\n` +
+        (l.clearNodata
+          ? `    # Remove auto-added nodata tag so 0-valued pixels are visible in GIS\n` +
+            `    ds = gdal.Open(out_path, gdal.GA_Update)\n` +
+            `    for i in range(1, ds.RasterCount + 1):\n` +
+            `        ds.GetRasterBand(i).DeleteNoDataValue()\n` +
+            `    ds = None\n`
+          : '') +
+        `    print('    ->', os.path.basename(out_path))\n`
       );
     }).join('') +
     `\nprint('\\nAll done. Merged files saved to:', OUTPUT_DIR)\n`
