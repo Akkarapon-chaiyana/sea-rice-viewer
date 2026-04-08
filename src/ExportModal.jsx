@@ -34,7 +34,13 @@ function scriptHeader(mode, country, year, scale, projectId) {
   );
 }
 
-function layerImg(l) {
+function layerImg(l, country) {
+  // Timor-Leste binary layer is a pre-computed asset (SEA_binary_timor_YEAR),
+  // not derived from SEA_Avg — load it directly, no .gte(50) needed.
+  if (l.extra === 'binary' && country === 'timor') {
+    return `asset = f'{ASSET_PREFIX}/SEA_binary_' + COUNTRY.lower() + f'_{YEAR}'\n` +
+           `img   = ee.Image(asset)`;
+  }
   const assetLine = `asset = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'`;
   if (l.extra === 'binary') {
     // gte(50) gives 1 (rice) or 0 (not rice), masked where the asset has no data.
@@ -61,7 +67,7 @@ function genDriveCountry({ country, gaulName, year, scale, folder, selectedLayer
     `print(f'Exporting {country} ({year}) at {scale} m ...')\n` +
     selectedLayers.map(l =>
       `\n# ── ${l.label}\n` +
-      layerImg(l) + `.clip(geometry)\n` +
+      layerImg(l, country) + `.clip(geometry)\n` +
       `desc  = f'${outSuf(l)}_{country}_{year}'\n` +
       `task  = ee.batch.Export.image.toDrive(\n` +
       `    image=img, description=desc, folder=OUTPUT_FOLDER,\n` +
@@ -95,7 +101,7 @@ function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTil
       `    tid    = tile['id']\n` +
       `    w, s, e, n = tile['bbox']\n` +
       `    region = ee.Geometry.Rectangle([w, s, e, n])\n` +
-      `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(region)\n` +
+      `    ` + layerImg(l, country).replace(/\n/g, '\n    ') + `.clip(region)\n` +
       `    desc   = f'${outSuf(l)}_${country}_${year}_{tid}'\n` +
       `    task   = ee.batch.Export.image.toDrive(\n` +
       `        image=img, description=desc, folder=OUTPUT_FOLDER,\n` +
@@ -242,7 +248,7 @@ function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outpu
       `    suf      = f'_t{i:03d}' if len(TILES) > 1 else ''\n` +
       `    fpath    = os.path.join(OUTPUT_DIR, f'${outSuf(l)}_${country}_${year}{suf}.tif')\n` +
       `    print(f'  [{i+1}/{len(TILES)}] {tw},{ts} → {te},{tn}')\n` +
-      `    ` + layerImg(l).replace(/\n/g, '\n    ') + `.clip(sub_geom)\n` +
+      `    ` + layerImg(l, country).replace(/\n/g, '\n    ') + `.clip(sub_geom)\n` +
       `    download_image(img, fpath, sub_geom${l.clearNodata ? ', clear_nodata=True' : ''})`
     ).join('\n') +
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
@@ -273,7 +279,7 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
       `    subs = subdivide_tile(w, s, e, n, SCALE)\n` +
       `    note = f' → {len(subs)} sub-tile(s)' if len(subs) > 1 else ''\n` +
       `    print(f'  Tile [{i+1}/{len(TILES)}] {tid}{note}')\n` +
-      `    ` + layerImg(l).replace(/\n/g, '\n    ') + `\n` +
+      `    ` + layerImg(l, country).replace(/\n/g, '\n    ') + `\n` +
       `    sub_paths = []\n` +
       `    for j, (sw, ss, se, sn) in enumerate(subs):\n` +
       `        region = ee.Geometry.Rectangle([sw, ss, se, sn])\n` +
