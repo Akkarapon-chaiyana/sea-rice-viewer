@@ -142,7 +142,7 @@ const PY_SUBDIVIDE =
   `        if 'empty' in msg or ('geometry' in msg and 'clip' in msg):\n` +
   `            print('    skipped (tile outside image extent)')\n` +
   `            return False\n` +
-  `        raise\n`
+  `        raise\n` +
   `    print(f'    {os.path.basename(fpath)} ...', end=' ', flush=True)\n` +
   `    resp = requests.get(url, stream=True)\n` +
   `    resp.raise_for_status()\n` +
@@ -162,7 +162,7 @@ const PY_SUBDIVIDE =
   `        with rasterio.open(fpath, 'r+') as ds: ds.nodata = None\n` +
   `    print('done')\n` +
   `    return True\n\n` +
-  `def mosaic_subtiles(paths, out_path, clear_nodata=False):\n`
+  `def mosaic_subtiles(paths, out_path, clear_nodata=False):\n` +
   `    """Merge sub-tile GeoTIFFs into one file, then delete the parts."""\n` +
   `    if len(paths) == 1:\n` +
   `        os.replace(paths[0], out_path)\n` +
