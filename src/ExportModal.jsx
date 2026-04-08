@@ -115,9 +115,18 @@ function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTil
 //   pixels_x = deg_lon × 111320 × cos(lat) / scale_m
 //   pixels_y = deg_lat × 110540            / scale_m
 //   n        = ceil( sqrt(px_x × px_y / MAX_TILE_PX) )
+//
+// Tuning guide (single-band GeoTIFF, uncompressed):
+//   data type │ safe MAX_TILE_PX  │ approx tile size
+//   ──────────┼───────────────────┼─────────────────
+//   uint8     │  40_000_000       │  ~40 MB
+//   int16     │  20_000_000       │  ~40 MB
+//   float32   │  10_000_000       │  ~40 MB
+// Default 32 M works well for uint8/int16 rice assets (0-100 probability).
+// If GEE raises a "file too large" error, halve the value and retry.
 const PY_SUBDIVIDE =
   `import math, requests, zipfile, io, os\n\n` +
-  `MAX_TILE_PX = 8_000_000  # ~32 MB float32; GEE thumbnail hard-limit ≈ 48 MB\n\n` +
+  `MAX_TILE_PX = 32_000_000  # tune if GEE raises "file too large" (see comment above)\n\n` +
   `def subdivide_tile(west, south, east, north, scale_m):\n` +
   `    cos_lat = math.cos(math.radians((north + south) / 2))\n` +
   `    px_x    = abs(east  - west)  * 111_320 * cos_lat / scale_m\n` +
