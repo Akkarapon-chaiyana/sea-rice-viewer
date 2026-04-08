@@ -285,7 +285,7 @@ function genMergeScript({ country, year, selectedLayers, outputDir, exportTarget
       const suf = outSuf(l);
       return (
         `\n# ── ${l.label}\n` +
-        `pattern = os.path.join(OUTPUT_DIR, f'${suf}_${country}_{year}${patternSuffix}')\n` +
+        `pattern = os.path.join(OUTPUT_DIR, '${suf}_${country}_${year}${patternSuffix}')\n` +
         `files   = sorted(glob.glob(pattern))\n` +
         `if not files:\n` +
         `    print(f'  [${l.label}] No tiles found matching: {pattern}')\n` +
