@@ -132,9 +132,17 @@ const PY_SUBDIVIDE =
   `    """Download one GeoTIFF to fpath (handles both ZIP and raw-TIFF responses).\n` +
   `    clear_nodata=True removes GEE's automatic nodata=0 tag so that 0-valued\n` +
   `    pixels (e.g. non-rice in binary layers) are not hidden by GIS software.\n` +
+  `    Returns True on success, False if the tile falls outside the image extent.\n` +
   `    """\n` +
-  `    url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
-  `                              'region': region, 'format': 'GeoTIFF'})\n` +
+  `    try:\n` +
+  `        url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
+  `                                  'region': region, 'format': 'GeoTIFF'})\n` +
+  `    except Exception as e:\n` +
+  `        msg = str(e).lower()\n` +
+  `        if 'empty' in msg or ('geometry' in msg and 'clip' in msg):\n` +
+  `            print('    skipped (tile outside image extent)')\n` +
+  `            return False\n` +
+  `        raise\n`
   `    print(f'    {os.path.basename(fpath)} ...', end=' ', flush=True)\n` +
   `    resp = requests.get(url, stream=True)\n` +
   `    resp.raise_for_status()\n` +
@@ -152,8 +160,9 @@ const PY_SUBDIVIDE =
   `    if clear_nodata:\n` +
   `        import rasterio\n` +
   `        with rasterio.open(fpath, 'r+') as ds: ds.nodata = None\n` +
-  `    print('done')\n\n` +
-  `def mosaic_subtiles(paths, out_path, clear_nodata=False):\n` +
+  `    print('done')\n` +
+  `    return True\n\n` +
+  `def mosaic_subtiles(paths, out_path, clear_nodata=False):\n`
   `    """Merge sub-tile GeoTIFFs into one file, then delete the parts."""\n` +
   `    if len(paths) == 1:\n` +
   `        os.replace(paths[0], out_path)\n` +
