@@ -261,6 +261,52 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
 
+// Merge tiles — combine downloaded tile GeoTIFFs into one file per layer
+function genMergeScript({ country, year, selectedLayers, outputDir, exportTarget }) {
+  const dir = outputDir || './sea_rice_output';
+  // country-mode tiles are named _t000, _t001 …; grid-tile-mode tiles use the tile ID
+  const patternSuffix = exportTarget === 'country' ? '_t*.tif' : '_*.tif';
+  return (
+    '#!/usr/bin/env python3\n' +
+    '"""\n' +
+    'SEA Rice Viewer — Merge Script\n' +
+    `Merges downloaded tile GeoTIFFs into one file per layer.\n` +
+    `Country : ${country}\n` +
+    `Year    : ${year}\n` +
+    '"""\n' +
+    'import os, glob\n' +
+    'import rasterio\n' +
+    'from rasterio.merge import merge\n\n' +
+    `COUNTRY    = '${country}'\n` +
+    `YEAR       = ${year}\n` +
+    `OUTPUT_DIR = '${dir}'\n\n` +
+    `print(f'Merging tiles for ${country} (${year}) ...')\n` +
+    selectedLayers.map(l => {
+      const suf = outSuf(l);
+      return (
+        `\n# ── ${l.label}\n` +
+        `pattern = os.path.join(OUTPUT_DIR, f'${suf}_${country}_{year}${patternSuffix}')\n` +
+        `files   = sorted(glob.glob(pattern))\n` +
+        `if not files:\n` +
+        `    print(f'  [${l.label}] No tiles found matching: {pattern}')\n` +
+        `else:\n` +
+        `    print(f'  [${l.label}] Merging {len(files)} tile(s) ...')\n` +
+        `    srcs              = [rasterio.open(f) for f in files]\n` +
+        `    mosaic, transform = merge(srcs)\n` +
+        `    profile           = srcs[0].profile.copy()\n` +
+        `    profile.update({'width': mosaic.shape[2], 'height': mosaic.shape[1],\n` +
+        `                    'transform': transform${l.clearNodata ? ", 'nodata': None" : ''}})\n` +
+        `    for src in srcs: src.close()\n` +
+        `    out_path = os.path.join(OUTPUT_DIR, f'${suf}_${country}_{year}_merged.tif')\n` +
+        `    with rasterio.open(out_path, 'w', **profile) as dst:\n` +
+        `        dst.write(mosaic)\n` +
+        `    print(f'    → {os.path.basename(out_path)}')\n`
+      );
+    }).join('') +
+    `\nprint('\\nAll done. Merged files saved to:', OUTPUT_DIR)\n`
+  );
+}
+
 // ── requirements_download.txt content (mirrored from repo root) ──────────────
 const REQUIREMENTS_TXT =
 `# Requirements for SEA Rice Viewer — Local Download scripts
@@ -306,6 +352,13 @@ export default function ExportModal({
       JSON.stringify(selectedLayers.map(l => l.id)),
       activeTiles.length, JSON.stringify(activeTiles.map(t => t.id))]);
 
+  const mergeScript = useMemo(() => {
+    if (exportDest !== 'local') return null;
+    return genMergeScript({ country, year, selectedLayers, outputDir, exportTarget });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [country, year, outputDir, exportTarget, exportDest,
+      JSON.stringify(selectedLayers.map(l => l.id))]);
+
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(script).then(() => {
       setCopied(true);
@@ -314,14 +367,22 @@ export default function ExportModal({
   }, [script]);
 
   const handleDownload = useCallback(() => {
-    const blob = new Blob([script], { type: 'text/x-python' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `sea_rice_export_${country.toLowerCase()}_${year}.py`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [script, country, year]);
+    const triggerDownload = (content, filename) => {
+      const blob = new Blob([content], { type: 'text/x-python' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+    const slug = country.toLowerCase();
+    triggerDownload(script, `sea_rice_export_${slug}_${year}.py`);
+    if (mergeScript) {
+      // slight delay so browsers don't block the second download
+      setTimeout(() => triggerDownload(mergeScript, `sea_rice_merge_${slug}_${year}.py`), 300);
+    }
+  }, [script, mergeScript, country, year]);
 
   const handleDownloadRequirements = useCallback(() => {
     const blob = new Blob([REQUIREMENTS_TXT], { type: 'text/plain' });
@@ -496,7 +557,7 @@ export default function ExportModal({
             {copied ? '✓ Copied!' : 'Copy Script'}
           </button>
           <button className="btn btn-download-py" onClick={handleDownload}>
-            ↓ Download .py
+            {mergeScript ? '↓ Download 2 scripts' : '↓ Download .py'}
           </button>
         </div>
 
