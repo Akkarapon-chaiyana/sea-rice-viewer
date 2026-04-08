@@ -125,9 +125,10 @@ function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTil
 // Default 20 M is safe for int16 rice assets (~40 MB/tile, under GEE's 48 MB limit).
 // Raise to 40M for uint8, lower to 10M for float32.
 const PY_SUBDIVIDE =
-  `import math, requests, zipfile, io, os\n\n` +
+  `import math, requests, zipfile, io, os, time\n\n` +
   `MAX_TILE_PX = 20_000_000  # int16 assets: 20M px ≈ 40 MB, safely under GEE's 48 MB limit\n` +
-  `                           # uint8 → can raise to 40M; float32 → lower to 10M\n\n` +
+  `                           # uint8 → can raise to 40M; float32 → lower to 10M\n` +
+  `MAX_RETRIES = 5            # retry on transient GEE 5xx / 429 errors\n\n` +
   `def subdivide_tile(west, south, east, north, scale_m):\n` +
   `    cos_lat = math.cos(math.radians((north + south) / 2))\n` +
   `    px_x    = abs(east  - west)  * 111_320 * cos_lat / scale_m\n` +
@@ -139,39 +140,54 @@ const PY_SUBDIVIDE =
   `             round(west + (c+1)*dlon, 4), round(south + (r+1)*dlat, 4)]\n` +
   `            for r in range(n) for c in range(n)]\n\n` +
   `def download_image(img, fpath, region, clear_nodata=False):\n` +
-  `    """Download one GeoTIFF to fpath (handles both ZIP and raw-TIFF responses).\n` +
-  `    clear_nodata=True removes GEE's automatic nodata=0 tag so that 0-valued\n` +
-  `    pixels (e.g. non-rice in binary layers) are not hidden by GIS software.\n` +
+  `    """Download one GeoTIFF to fpath with automatic retry on transient GEE errors.\n` +
   `    Returns True on success, False if the tile falls outside the image extent.\n` +
   `    """\n` +
-  `    try:\n` +
-  `        url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
-  `                                  'region': region, 'format': 'GeoTIFF'})\n` +
-  `    except Exception as e:\n` +
-  `        msg = str(e).lower()\n` +
-  `        if 'empty' in msg or ('geometry' in msg and 'clip' in msg):\n` +
-  `            print('    skipped (tile outside image extent)')\n` +
-  `            return False\n` +
-  `        raise\n` +
-  `    print(f'    {os.path.basename(fpath)} ...', end=' ', flush=True)\n` +
-  `    resp = requests.get(url, stream=True)\n` +
-  `    resp.raise_for_status()\n` +
-  `    data = resp.content\n` +
-  `    # GEE returns a ZIP archive OR a raw GeoTIFF depending on API version\n` +
-  `    if data[:2] == b'PK':                              # ZIP magic bytes\n` +
-  `        with zipfile.ZipFile(io.BytesIO(data)) as z:\n` +
-  `            nm = z.namelist()[0]\n` +
-  `            z.extract(nm, OUTPUT_DIR)\n` +
-  `            os.replace(os.path.join(OUTPUT_DIR, nm), fpath)\n` +
-  `    elif data[:2] in (b'II', b'MM'):                  # TIFF little/big-endian\n` +
-  `        with open(fpath, 'wb') as f: f.write(data)\n` +
-  `    else:\n` +
-  `        raise RuntimeError(f'Unexpected response for {os.path.basename(fpath)}: {data[:120]}')\n` +
-  `    if clear_nodata:\n` +
-  `        import rasterio\n` +
-  `        with rasterio.open(fpath, 'r+') as ds: ds.nodata = None\n` +
-  `    print('done')\n` +
-  `    return True\n\n` +
+  `    for attempt in range(1, MAX_RETRIES + 1):\n` +
+  `        # ── 1. get signed download URL from GEE ───────────────────────────\n` +
+  `        try:\n` +
+  `            url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
+  `                                      'region': region, 'format': 'GeoTIFF'})\n` +
+  `        except Exception as e:\n` +
+  `            msg = str(e).lower()\n` +
+  `            if 'empty' in msg or ('geometry' in msg and 'clip' in msg):\n` +
+  `                print('    skipped (tile outside image extent)')\n` +
+  `                return False\n` +
+  `            if attempt < MAX_RETRIES:\n` +
+  `                wait = 2 ** attempt\n` +
+  `                print(f'    GEE error (attempt {attempt}/{MAX_RETRIES}), retrying in {wait}s: {e}')\n` +
+  `                time.sleep(wait)\n` +
+  `                continue\n` +
+  `            raise\n` +
+  `        # ── 2. download the tile ──────────────────────────────────────────\n` +
+  `        print(f'    {os.path.basename(fpath)} ...', end=' ', flush=True)\n` +
+  `        try:\n` +
+  `            resp = requests.get(url, stream=True)\n` +
+  `            resp.raise_for_status()\n` +
+  `        except requests.exceptions.HTTPError as e:\n` +
+  `            if resp.status_code in (429, 500, 502, 503, 504) and attempt < MAX_RETRIES:\n` +
+  `                wait = 2 ** attempt\n` +
+  `                print(f'HTTP {resp.status_code} (attempt {attempt}/{MAX_RETRIES}), retrying in {wait}s ...')\n` +
+  `                time.sleep(wait)\n` +
+  `                continue\n` +
+  `            raise\n` +
+  `        # ── 3. save to disk ───────────────────────────────────────────────\n` +
+  `        data = resp.content\n` +
+  `        if data[:2] == b'PK':                              # ZIP magic bytes\n` +
+  `            with zipfile.ZipFile(io.BytesIO(data)) as z:\n` +
+  `                nm = z.namelist()[0]\n` +
+  `                z.extract(nm, OUTPUT_DIR)\n` +
+  `                os.replace(os.path.join(OUTPUT_DIR, nm), fpath)\n` +
+  `        elif data[:2] in (b'II', b'MM'):                  # TIFF little/big-endian\n` +
+  `            with open(fpath, 'wb') as f: f.write(data)\n` +
+  `        else:\n` +
+  `            raise RuntimeError(f'Unexpected response for {os.path.basename(fpath)}: {data[:120]}')\n` +
+  `        if clear_nodata:\n` +
+  `            import rasterio\n` +
+  `            with rasterio.open(fpath, 'r+') as ds: ds.nodata = None\n` +
+  `        print('done')\n` +
+  `        return True\n` +
+  `    return False\n\n` +
   `def mosaic_subtiles(paths, out_path, clear_nodata=False):\n` +
   `    """Merge sub-tile GeoTIFFs into one file, then delete the parts."""\n` +
   `    if len(paths) == 1:\n` +
