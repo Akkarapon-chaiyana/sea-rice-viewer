@@ -122,11 +122,12 @@ function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTil
 //   uint8     │  40_000_000       │  ~40 MB
 //   int16     │  20_000_000       │  ~40 MB
 //   float32   │  10_000_000       │  ~40 MB
-// Default 32 M works well for uint8/int16 rice assets (0-100 probability).
-// If GEE raises a "file too large" error, halve the value and retry.
+// Default 20 M is safe for int16 rice assets (~40 MB/tile, under GEE's 48 MB limit).
+// Raise to 40M for uint8, lower to 10M for float32.
 const PY_SUBDIVIDE =
   `import math, requests, zipfile, io, os\n\n` +
-  `MAX_TILE_PX = 32_000_000  # tune if GEE raises "file too large" (see comment above)\n\n` +
+  `MAX_TILE_PX = 20_000_000  # int16 assets: 20M px ≈ 40 MB, safely under GEE's 48 MB limit\n` +
+  `                           # uint8 → can raise to 40M; float32 → lower to 10M\n\n` +
   `def subdivide_tile(west, south, east, north, scale_m):\n` +
   `    cos_lat = math.cos(math.radians((north + south) / 2))\n` +
   `    px_x    = abs(east  - west)  * 111_320 * cos_lat / scale_m\n` +
