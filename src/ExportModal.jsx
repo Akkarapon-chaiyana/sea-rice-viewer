@@ -51,7 +51,7 @@ function genDriveCountry({ country, gaulName, year, scale, folder, selectedLayer
   const hdr = scriptHeader('Google Drive — Whole Country', country, year, scale, projectId);
   return hdr +
     `COUNTRY       = '${country}'\n` +
-    `GAUL_NAME     = '${gaulName}'\n` +
+    `GAUL_NAME     = "${gaulName}"\n` +
     `YEAR          = ${year}\n` +
     `SCALE         = ${scale}\n` +
     `OUTPUT_FOLDER = '${folder}'\n\n` +
@@ -219,7 +219,7 @@ function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outpu
   return hdr +
     PY_SUBDIVIDE +
     `COUNTRY    = '${country}'\n` +
-    `GAUL_NAME  = '${gaulName}'\n` +
+    `GAUL_NAME  = "${gaulName}"\n` +
     `YEAR       = ${year}\n` +
     `SCALE      = ${scale}\n` +
     `OUTPUT_DIR = '${dir}'\n\n` +
