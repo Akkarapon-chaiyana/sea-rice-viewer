@@ -363,9 +363,9 @@ export default function ExportModal({
   onClose,
 }) {
   const [selected,     setSelected]     = useState({ Mean: false, Std: false, Binary: false, Pseudo: false });
-  const [scale,        setScale]        = useState(30);
-  const [exportTarget, setExportTarget] = useState('country'); // 'country' | 'tiles'
-  const [exportDest,   setExportDest]   = useState('drive');   // 'drive' | 'local'
+  const [scale,        setScale]        = useState(null);
+  const [exportTarget, setExportTarget] = useState(null); // 'country' | 'tiles'
+  const [exportDest,   setExportDest]   = useState(null); // 'drive' | 'local'
   const [folder,       setFolder]       = useState('sea_rice_export');
   const [outputDir,    setOutputDir]    = useState('./sea_rice_output');
   const [copied,       setCopied]       = useState(false);
@@ -379,6 +379,7 @@ export default function ExportModal({
   const totalTiles     = selectedTiles?.size ?? 0;
 
   const script = useMemo(() => {
+    if (!scale || !exportTarget || !exportDest || selectedLayers.length === 0) return null;
     const args = { country, slug, gaulName, year, scale, folder, outputDir, selectedLayers, activeTiles, projectId };
     if (exportTarget === 'country') {
       return exportDest === 'drive' ? genDriveCountry(args) : genLocalCountry(args);
@@ -584,17 +585,22 @@ export default function ExportModal({
           {/* Script preview */}
           <div className="modal-section">
             <div className="modal-label">Generated Python script</div>
-            <pre className="code-block">{script}</pre>
+            {script
+              ? <pre className="code-block">{script}</pre>
+              : <div style={{ color: '#666688', fontSize: 12, padding: '12px 0' }}>
+                  Select at least one layer, a resolution, an export area, and a destination to generate the script.
+                </div>
+            }
           </div>
 
         </div>
 
         {/* Footer */}
         <div className="modal-footer">
-          <button className="btn btn-copy" onClick={handleCopy}>
+          <button className="btn btn-copy" onClick={handleCopy} disabled={!script}>
             {copied ? '✓ Copied!' : 'Copy Script'}
           </button>
-          <button className="btn btn-download-py" onClick={handleDownload}>
+          <button className="btn btn-download-py" onClick={handleDownload} disabled={!script}>
             {mergeScript ? '↓ Download 2 scripts' : '↓ Download .py'}
           </button>
         </div>
