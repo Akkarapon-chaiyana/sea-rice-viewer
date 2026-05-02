@@ -152,9 +152,8 @@ const PY_SUBDIVIDE =
   `    for attempt in range(1, MAX_RETRIES + 1):\n` +
   `        # ── 1. get signed download URL from GEE ───────────────────────────\n` +
   `        try:\n` +
-  `            scale_deg = SCALE / 111_320\n` +
-  `            url = img.getDownloadURL({'crsTransform': [scale_deg, 0, -180, 0, -scale_deg, 90],\n` +
-  `                                      'crs': 'EPSG:4326', 'region': region, 'format': 'GeoTIFF'})\n` +
+  `            url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
+  `                                      'region': region, 'format': 'GeoTIFF'})\n` +
   `        except Exception as e:\n` +
   `            msg = str(e).lower()\n` +
   `            if 'empty' in msg or ('geometry' in msg and 'clip' in msg):\n` +
