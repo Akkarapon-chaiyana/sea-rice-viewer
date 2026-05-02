@@ -470,7 +470,11 @@ export default function App() {
       layersRef.current = { ...layersRef.current, [typeId]: next };
       setLayers(prev => ({ ...prev, [typeId]: next }));
     } catch (err) {
-      const next = { ...layersRef.current[typeId], loading: false, error: err.message };
+      const msg = err.message?.toLowerCase() ?? '';
+      const friendly = msg.includes('not found') || msg.includes('does not exist')
+        ? `${countryObj.label} is not included in the analysis.`
+        : err.message;
+      const next = { ...layersRef.current[typeId], loading: false, error: friendly };
       layersRef.current = { ...layersRef.current, [typeId]: next };
       setLayers(prev => ({ ...prev, [typeId]: next }));
     }
