@@ -914,6 +914,7 @@ export default function App() {
       {exportOpen && (
         <ExportModal
           country={country}
+          slug={COUNTRIES.find(c => c.label === country)?.slug ?? country.toLowerCase()}
           gaulName={COUNTRIES.find(c => c.label === country)?.gaul ?? country}
           year={year}
           projectId={projectId}

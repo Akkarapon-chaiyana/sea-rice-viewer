@@ -34,14 +34,14 @@ function scriptHeader(mode, country, year, scale, projectId) {
   );
 }
 
-function layerImg(l, country) {
+function layerImg(l, slug) {
   // Timor-Leste binary layer is a pre-computed asset (SEA_binary_timor_YEAR),
   // not derived from SEA_Avg — load it directly, no .gte(50) needed.
-  if (l.extra === 'binary' && country === 'timor') {
-    return `asset = f'{ASSET_PREFIX}/SEA_binary_' + COUNTRY.lower() + f'_{YEAR}'\n` +
+  if (l.extra === 'binary' && slug === 'timor') {
+    return `asset = f'{ASSET_PREFIX}/SEA_binary_${slug}_{YEAR}'\n` +
            `img   = ee.Image(asset)`;
   }
-  const assetLine = `asset = f'{ASSET_PREFIX}/${l.suffix}_' + COUNTRY.lower() + f'_{YEAR}'`;
+  const assetLine = `asset = f'{ASSET_PREFIX}/${l.suffix}_${slug}_{YEAR}'`;
   if (l.extra === 'binary') {
     // gte(50) gives 1 (rice) or 0 (not rice), masked where the asset has no data.
     // unmask(0, False) fills ALL masked pixels with 0 globally (sameFootprint=False),
@@ -53,10 +53,10 @@ function layerImg(l, country) {
 }
 
 // Google Drive — whole country
-function genDriveCountry({ country, gaulName, year, scale, folder, selectedLayers, projectId }) {
+function genDriveCountry({ country, slug, gaulName, year, scale, folder, selectedLayers, projectId }) {
   const hdr = scriptHeader('Google Drive — Whole Country', country, year, scale, projectId);
   return hdr +
-    `COUNTRY       = '${country}'\n` +
+    `COUNTRY       = '${slug}'\n` +
     `GAUL_NAME     = "${gaulName}"\n` +
     `YEAR          = ${year}\n` +
     `SCALE         = ${scale}\n` +
@@ -67,7 +67,7 @@ function genDriveCountry({ country, gaulName, year, scale, folder, selectedLayer
     `print(f'Exporting {country} ({year}) at {scale} m ...')\n` +
     selectedLayers.map(l =>
       `\n# ── ${l.label}\n` +
-      layerImg(l, country) + `.clip(geometry)\n` +
+      layerImg(l, slug) + `.clip(geometry)\n` +
       `desc  = f'${outSuf(l)}_{country}_{year}'\n` +
       `task  = ee.batch.Export.image.toDrive(\n` +
       `    image=img, description=desc, folder=OUTPUT_FOLDER,\n` +
@@ -82,14 +82,14 @@ function genDriveCountry({ country, gaulName, year, scale, folder, selectedLayer
 }
 
 // Google Drive — grid tiles
-function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTiles, projectId }) {
+function genDriveTiles({ country, slug, year, scale, folder, selectedLayers, activeTiles, projectId }) {
   const n   = activeTiles.length;
   const hdr = scriptHeader(`Google Drive — ${n} Tiles`, country, year, scale, projectId);
   const tilesList = activeTiles.map(t =>
     `    {'id': '${t.id}', 'bbox': [${t.bbox.join(', ')}]},`
   ).join('\n');
   return hdr +
-    `COUNTRY       = '${country}'\n` +
+    `COUNTRY       = '${slug}'\n` +
     `YEAR          = ${year}\n` +
     `SCALE         = ${scale}\n` +
     `OUTPUT_FOLDER = '${folder}'\n\n` +
@@ -101,7 +101,7 @@ function genDriveTiles({ country, year, scale, folder, selectedLayers, activeTil
       `    tid    = tile['id']\n` +
       `    w, s, e, n = tile['bbox']\n` +
       `    region = ee.Geometry.Rectangle([w, s, e, n])\n` +
-      `    ` + layerImg(l, country).replace(/\n/g, '\n    ') + `.clip(region)\n` +
+      `    ` + layerImg(l, slug).replace(/\n/g, '\n    ') + `.clip(region)\n` +
       `    desc   = f'${outSuf(l)}_${country}_${year}_{tid}'\n` +
       `    task   = ee.batch.Export.image.toDrive(\n` +
       `        image=img, description=desc, folder=OUTPUT_FOLDER,\n` +
@@ -152,8 +152,9 @@ const PY_SUBDIVIDE =
   `    for attempt in range(1, MAX_RETRIES + 1):\n` +
   `        # ── 1. get signed download URL from GEE ───────────────────────────\n` +
   `        try:\n` +
-  `            url = img.getDownloadURL({'scale': SCALE, 'crs': 'EPSG:4326',\n` +
-  `                                      'region': region, 'format': 'GeoTIFF'})\n` +
+  `            scale_deg = SCALE / 111_320\n` +
+  `            url = img.getDownloadURL({'crsTransform': [scale_deg, 0, 0, 0, -scale_deg, 0],\n` +
+  `                                      'crs': 'EPSG:4326', 'region': region, 'format': 'GeoTIFF'})\n` +
   `        except Exception as e:\n` +
   `            msg = str(e).lower()\n` +
   `            if 'empty' in msg or ('geometry' in msg and 'clip' in msg):\n` +
@@ -219,12 +220,12 @@ const PY_SUBDIVIDE =
   `        print('    [warn] rasterio not found; sub-tiles kept separately (pip install rasterio)')\n\n`;
 
 // Local download — whole country (auto-tiled)
-function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outputDir, projectId }) {
+function genLocalCountry({ country, slug, gaulName, year, scale, selectedLayers, outputDir, projectId }) {
   const dir = outputDir || './sea_rice_output';
   const hdr = scriptHeader('Local Download — Whole Country', country, year, scale, projectId);
   return hdr +
     PY_SUBDIVIDE +
-    `COUNTRY    = '${country}'\n` +
+    `COUNTRY    = '${slug}'\n` +
     `GAUL_NAME  = "${gaulName}"\n` +
     `YEAR       = ${year}\n` +
     `SCALE      = ${scale}\n` +
@@ -248,14 +249,14 @@ function genLocalCountry({ country, gaulName, year, scale, selectedLayers, outpu
       `    suf      = f'_t{i:03d}' if len(TILES) > 1 else ''\n` +
       `    fpath    = os.path.join(OUTPUT_DIR, f'${outSuf(l)}_${country}_${year}{suf}.tif')\n` +
       `    print(f'  [{i+1}/{len(TILES)}] {tw},{ts} → {te},{tn}')\n` +
-      `    ` + layerImg(l, country).replace(/\n/g, '\n    ') + `.clip(sub_geom)\n` +
+      `    ` + layerImg(l, slug).replace(/\n/g, '\n    ') + `.clip(sub_geom)\n` +
       `    download_image(img, fpath, sub_geom${l.clearNodata ? ', clear_nodata=True' : ''})`
     ).join('\n') +
     `\n\nprint(f'\\nDone. Files saved to: {OUTPUT_DIR}/')\n`;
 }
 
 // Local download — grid tiles (auto-subdivided per tile, mosaicked after)
-function genLocalTiles({ country, year, scale, selectedLayers, outputDir, activeTiles, projectId }) {
+function genLocalTiles({ country, slug, year, scale, selectedLayers, outputDir, activeTiles, projectId }) {
   const n   = activeTiles.length;
   const dir = outputDir || './sea_rice_output';
   const hdr = scriptHeader(`Local Download — ${n} Tiles`, country, year, scale, projectId);
@@ -264,7 +265,7 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
   ).join('\n');
   return hdr +
     PY_SUBDIVIDE +
-    `COUNTRY    = '${country}'\n` +
+    `COUNTRY    = '${slug}'\n` +
     `YEAR       = ${year}\n` +
     `SCALE      = ${scale}\n` +
     `OUTPUT_DIR = '${dir}'\n\n` +
@@ -279,7 +280,7 @@ function genLocalTiles({ country, year, scale, selectedLayers, outputDir, active
       `    subs = subdivide_tile(w, s, e, n, SCALE)\n` +
       `    note = f' → {len(subs)} sub-tile(s)' if len(subs) > 1 else ''\n` +
       `    print(f'  Tile [{i+1}/{len(TILES)}] {tid}{note}')\n` +
-      `    ` + layerImg(l, country).replace(/\n/g, '\n    ') + `\n` +
+      `    ` + layerImg(l, slug).replace(/\n/g, '\n    ') + `\n` +
       `    sub_paths = []\n` +
       `    for j, (sw, ss, se, sn) in enumerate(subs):\n` +
       `        region = ee.Geometry.Rectangle([sw, ss, se, sn])\n` +
@@ -357,7 +358,7 @@ rasterio>=1.3.0             # Sub-tile mosaicking and nodata handling
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ExportModal({
-  country, gaulName, year, projectId,
+  country, slug, gaulName, year, projectId,
   selectedTiles,
   onSelectAllTiles, onSelectNoTiles,
   onClose,
@@ -379,14 +380,14 @@ export default function ExportModal({
   const totalTiles     = selectedTiles?.size ?? 0;
 
   const script = useMemo(() => {
-    const args = { country, gaulName, year, scale, folder, outputDir, selectedLayers, activeTiles, projectId };
+    const args = { country, slug, gaulName, year, scale, folder, outputDir, selectedLayers, activeTiles, projectId };
     if (exportTarget === 'country') {
       return exportDest === 'drive' ? genDriveCountry(args) : genLocalCountry(args);
     } else {
       return exportDest === 'drive' ? genDriveTiles(args)   : genLocalTiles(args);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [country, gaulName, year, scale, folder, outputDir, exportTarget, exportDest, projectId,
+  }, [country, slug, gaulName, year, scale, folder, outputDir, exportTarget, exportDest, projectId,
       JSON.stringify(selectedLayers.map(l => l.id)),
       activeTiles.length, JSON.stringify(activeTiles.map(t => t.id))]);
 

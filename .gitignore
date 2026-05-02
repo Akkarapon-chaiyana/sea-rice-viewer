@@ -2,3 +2,8 @@ node_modules
 dist
 .env.local
 .env
+
+# Downloaded GeoTIFF outputs — large data files, not tracked in git
+download_merge_src/binary_30m_maps/
+*.tif
+*.DS_Store
