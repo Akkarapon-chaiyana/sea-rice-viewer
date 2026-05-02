@@ -362,7 +362,7 @@ export default function ExportModal({
   onSelectAllTiles, onSelectNoTiles,
   onClose,
 }) {
-  const [selected,     setSelected]     = useState({ Mean: true, Std: false, Binary: false, Pseudo: false });
+  const [selected,     setSelected]     = useState({ Mean: false, Std: false, Binary: false, Pseudo: false });
   const [scale,        setScale]        = useState(30);
   const [exportTarget, setExportTarget] = useState('country'); // 'country' | 'tiles'
   const [exportDest,   setExportDest]   = useState('drive');   // 'drive' | 'local'
