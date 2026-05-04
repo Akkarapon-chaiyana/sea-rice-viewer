@@ -2,10 +2,10 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 
 // ── Layer / scale options ─────────────────────────────────────────────────────
 const LAYER_OPTIONS = [
-  { id: 'Mean',   label: '5-Fold Mean Probability', suffix: 'SEA_Avg',  extra: '' },
-  { id: 'Std',    label: 'Standard Deviation',       suffix: 'SEA_Std',  extra: '' },
-  { id: 'Binary', label: 'Binary (prob ≥ 50%)',       suffix: 'SEA_Avg',  outSuffix: 'SEA_Binary', extra: 'binary', clearNodata: true },
-  { id: 'Pseudo', label: 'Pseudo-Labeling',           suffix: 'SEA_Pseu', extra: '',                                clearNodata: true },
+  { id: 'Mean',   label: '5-Fold Mean Probability', color: '#e06c75', suffix: 'SEA_Avg',  extra: '' },
+  { id: 'Std',    label: 'Standard Deviation',       color: '#e5c07b', suffix: 'SEA_Std',  extra: '' },
+  { id: 'Binary', label: 'Binary (prob ≥ 50%)',       color: '#61afef', suffix: 'SEA_Avg',  outSuffix: 'SEA_Binary', extra: 'binary', clearNodata: true },
+  { id: 'Pseudo', label: 'Pseudo-Labeling',           color: '#98c379', suffix: 'SEA_Pseu', extra: '',                                clearNodata: true },
 ];
 
 const SCALES = [10, 30, 100, 250, 1000];
@@ -345,37 +345,6 @@ function genMergeScript({ country, year, selectedLayers, outputDir, exportTarget
   );
 }
 
-// ── requirements_download.txt content (mirrored from repo root) ──────────────
-const REQUIREMENTS_TXT =
-`# ============================================================
-# Requirements for SEA Rice Viewer — Download & Merge scripts
-# ============================================================
-#
-# Quick install (all-in-one):
-#   pip install -r requirements_download.txt
-#
-# Recommended (conda — avoids GDAL build issues):
-#   conda install -c conda-forge earthengine-api requests rasterio gdal numpy
-#
-# ── Core dependencies ────────────────────────────────────────
-earthengine-api>=0.1.370   # Google Earth Engine Python API (ee.Authenticate / ee.Initialize)
-requests>=2.28.0            # HTTP streaming download of GeoTIFF tiles
-numpy>=1.24.0               # Array operations (required by rasterio)
-
-# ── GeoTIFF processing ───────────────────────────────────────
-rasterio>=1.3.0             # Sub-tile mosaicking and nodata tag handling
-# NOTE: If rasterio install fails on Windows/macOS, try:
-#   conda install -c conda-forge rasterio
-
-# ── Merge script (rice_download_merge_*.py) ──────────────────
-# gdal is used by the merge script (BuildVRT + Translate).
-# pip install may fail on some platforms — conda is strongly recommended:
-#   conda install -c conda-forge gdal
-gdal>=3.4.0
-
-# ── Standard library (no install needed) ────────────────────
-# math, os, io, time, zipfile, glob  →  included with Python
-`;
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ExportModal({
@@ -394,6 +363,7 @@ export default function ExportModal({
   const [outputDir,    setOutputDir]    = useState(() => localStorage.getItem('sea_rice_outputDir') || './sea_rice_output');
   const [copied,       setCopied]       = useState(false);
   const [showScript,   setShowScript]   = useState(false);
+  const [showSetup,    setShowSetup]    = useState(false);
 
   // Persist text fields so the user doesn't have to retype folder paths
   useEffect(() => { localStorage.setItem('sea_rice_folder',    folder);    }, [folder]);
@@ -451,15 +421,6 @@ export default function ExportModal({
     }
   }, [script, mergeScript, slug, year]);
 
-  const handleDownloadRequirements = useCallback(() => {
-    const blob = new Blob([REQUIREMENTS_TXT], { type: 'text/plain' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = 'requirements_download.txt';
-    a.click();
-    URL.revokeObjectURL(url);
-  }, []);
 
   return (
     <div className="modal-overlay" onClick={handleClose}>
@@ -477,6 +438,25 @@ export default function ExportModal({
 
         <div className="modal-body">
 
+          {/* Setup Guide */}
+          <div className="modal-section">
+            <div className="modal-label" style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => setShowSetup(v => !v)}>
+              <span style={{ fontSize: 10, color: '#7b8cde' }}>{showSetup ? '▾' : '▸'}</span>
+              Setup Guide
+            </div>
+            {showSetup && (
+              <div style={{ fontSize: 11, color: '#9aa0c8', lineHeight: 1.8, background: '#13132a', borderRadius: 6, padding: '10px 14px', marginTop: 6 }}>
+                New to Python or GEE? Follow the{' '}
+                <a href="https://github.com/Akkarapon-chaiyana/sea-rice-viewer#prerequisites-new-users"
+                  target="_blank" rel="noreferrer" style={{ color: '#7b8cde' }}>
+                  Prerequisites guide
+                </a>
+                {' '}in the README to get set up.
+              </div>
+            )}
+          </div>
+
           {/* Layers */}
           <div className="modal-section">
             <div className="modal-label">Layers to export</div>
@@ -485,6 +465,7 @@ export default function ExportModal({
                 <label key={l.id} className="checkbox-row">
                   <input type="checkbox" checked={!!selected[l.id]}
                     onChange={e => setSelected(s => ({ ...s, [l.id]: e.target.checked }))} />
+                  <span className="layer-dot" style={{ background: l.color }} />
                   <span className="checkbox-label">{l.label}</span>
                 </label>
               ))}
@@ -578,34 +559,6 @@ export default function ExportModal({
                   — direct download to local disk. Suitable for tiles up to ~100 MB. For large areas use Drive.
                 </div>
 
-                {/* Installation requirements block */}
-                <div style={{
-                  marginTop: 10, padding: '10px 12px',
-                  background: '#0d0d1f', border: '1px solid #2a2a4a', borderRadius: 6,
-                }}>
-                  <div style={{ fontSize: 11, color: '#ff8c00', fontWeight: 700, marginBottom: 6 }}>
-                    📦 Required libraries
-                  </div>
-                  <code style={{
-                    display: 'block', fontSize: 10, color: '#c8d0ff',
-                    background: '#13132a', padding: '6px 10px', borderRadius: 4,
-                    marginBottom: 8, userSelect: 'all',
-                  }}>
-                    pip install earthengine-api requests rasterio
-                  </code>
-                  <div style={{ fontSize: 10, color: '#666688', lineHeight: 1.6 }}>
-                    <span style={{ color: '#7b8cde' }}>earthengine-api</span> — authenticate &amp; query GEE&emsp;
-                    <span style={{ color: '#7b8cde' }}>requests</span> — stream tiles&emsp;
-                    <span style={{ color: '#7b8cde' }}>rasterio</span> — mosaic &amp; nodata fix
-                  </div>
-                  <button
-                    className="btn btn-copy"
-                    style={{ marginTop: 8, fontSize: 10, padding: '4px 10px' }}
-                    onClick={handleDownloadRequirements}
-                  >
-                    ↓ requirements_download.txt
-                  </button>
-                </div>
               </>
             )}
           </div>
