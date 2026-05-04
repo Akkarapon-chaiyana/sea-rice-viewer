@@ -607,9 +607,7 @@ export default function ExportModal({
           <div className="modal-section">
             <div className="modal-label">Citation</div>
             <div style={{ fontSize: 11, color: '#9aa0c8', lineHeight: 1.7, background: '#13132a', borderRadius: 6, padding: '10px 14px' }}>
-              Chaiyana, A., &amp; Wang, J. (2026).<br />
-              <em>High-Resolution Rice Area Inventory for Southeast Asia Using a Deep-Learning Ensemble Framework with Uncertainty-Guided Self-Training.</em><br />
-              National Institute of Education (NIE), Nanyang Technological University (NTU), Singapore.
+              Chaiyana, A., &amp; Wang, J. (2026). <em>High-Resolution Rice Area Inventory for Southeast Asia Using a Deep-Learning Ensemble Framework with Uncertainty-Guided Self-Training.</em> National Institute of Education (NIE), Nanyang Technological University (NTU), Singapore.
             </div>
           </div>
 
@@ -617,8 +615,8 @@ export default function ExportModal({
           <div className="modal-section">
             <div className="modal-label">Contact</div>
             <div style={{ fontSize: 11, color: '#9aa0c8', lineHeight: 2, background: '#13132a', borderRadius: 6, padding: '10px 14px' }}>
-              <div>Akkarapon Chaiyana &nbsp;<a href="mailto:akkarapon.c@nie.edu.sg" style={{ color: '#7b8cde' }}>akkarapon.c@nie.edu.sg</a></div>
-              <div>Wang Jingyu &nbsp;<a href="mailto:jingyu.wang@nie.edu.sg" style={{ color: '#7b8cde' }}>jingyu.wang@nie.edu.sg</a></div>
+              <div>Akkarapon Chaiyana (email: <a href="mailto:akkarapon.c@nie.edu.sg" style={{ color: '#7b8cde' }}>akkarapon.c@nie.edu.sg</a>)</div>
+              <div>Wang Jingyu (email: <a href="mailto:jingyu.wang@nie.edu.sg" style={{ color: '#7b8cde' }}>jingyu.wang@nie.edu.sg</a>)</div>
             </div>
           </div>
 
