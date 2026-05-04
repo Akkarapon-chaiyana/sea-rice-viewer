@@ -270,6 +270,7 @@ export default function App() {
   // Request counter — ensures only the latest country boundary request is applied
   const boundaryReqRef    = useRef(0);
 
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [country,     setCountry]     = useState('Thailand');
   const [year,        setYear]        = useState('2021');
   const [basemap,     setBasemap]     = useState('satellite');
@@ -715,10 +716,16 @@ export default function App() {
   return (
     <div className="app">
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
-      <aside className="sidebar">
+      <aside className={`sidebar${sidebarOpen ? '' : ' sidebar--collapsed'}`}>
         <div className="sidebar-header">
-          <div className="sidebar-title">SEA Rice Viewer</div>
-          <div className="sidebar-subtitle">Southeast Asia · Rice Mapping</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div className="sidebar-title">SEA Rice Viewer</div>
+              <div className="sidebar-subtitle">Southeast Asia · Rice Mapping</div>
+            </div>
+            <button className="sidebar-toggle" onClick={() => setSidebarOpen(false)}
+              title="Collapse panel">‹</button>
+          </div>
         </div>
 
         <div className="sidebar-body">
@@ -891,6 +898,12 @@ export default function App() {
 
         </div>
       </aside>
+
+      {/* Floating expand button — only when sidebar is collapsed */}
+      {!sidebarOpen && (
+        <button className="sidebar-expand-btn" onClick={() => setSidebarOpen(true)}
+          title="Expand panel">›</button>
+      )}
 
       {/* Map */}
       <div className="map-container" ref={mapEl} />

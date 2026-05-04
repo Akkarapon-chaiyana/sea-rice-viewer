@@ -369,6 +369,7 @@ export default function ExportModal({
   const [folder,       setFolder]       = useState('sea_rice_export');
   const [outputDir,    setOutputDir]    = useState('./sea_rice_output');
   const [copied,       setCopied]       = useState(false);
+  const [showScript,   setShowScript]   = useState(false);
 
   const handleExportTarget = useCallback((val) => setExportTarget(val), []);
   const handleClose        = useCallback(() => onClose(), [onClose]);
@@ -584,13 +585,36 @@ export default function ExportModal({
 
           {/* Script preview */}
           <div className="modal-section">
-            <div className="modal-label">Generated Python script</div>
-            {script
+            <div className="modal-label" style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => setShowScript(v => !v)}>
+              <span style={{ fontSize: 10, color: '#7b8cde' }}>{showScript ? '▾' : '▸'}</span>
+              Generated Python script
+            </div>
+            {showScript && (script
               ? <pre className="code-block">{script}</pre>
               : <div style={{ color: '#666688', fontSize: 12, padding: '12px 0' }}>
                   Select at least one layer, a resolution, an export area, and a destination to generate the script.
                 </div>
-            }
+            )}
+          </div>
+
+          {/* Citation */}
+          <div className="modal-section">
+            <div className="modal-label">Citation</div>
+            <div style={{ fontSize: 11, color: '#9aa0c8', lineHeight: 1.7, background: '#13132a', borderRadius: 6, padding: '10px 14px' }}>
+              Chaiyana, A., &amp; Wang, J. (2026).<br />
+              <em>High-Resolution Rice Area Inventory for Southeast Asia Using a Deep-Learning Ensemble Framework with Uncertainty-Guided Self-Training.</em><br />
+              National Institute of Education (NIE), Nanyang Technological University (NTU), Singapore.
+            </div>
+          </div>
+
+          {/* Contact */}
+          <div className="modal-section">
+            <div className="modal-label">Contact</div>
+            <div style={{ fontSize: 11, color: '#9aa0c8', lineHeight: 2, background: '#13132a', borderRadius: 6, padding: '10px 14px' }}>
+              <div>Akkarapon Chaiyana &nbsp;<a href="mailto:akkarapon.c@nie.edu.sg" style={{ color: '#7b8cde' }}>akkarapon.c@nie.edu.sg</a></div>
+              <div>Wang Jingyu &nbsp;<a href="mailto:jingyu.wang@nie.edu.sg" style={{ color: '#7b8cde' }}>jingyu.wang@nie.edu.sg</a></div>
+            </div>
           </div>
 
         </div>
