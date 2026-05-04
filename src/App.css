@@ -74,6 +74,12 @@
   color: #ffffff;
 }
 
+.sidebar-locked {
+  opacity: 0.4;
+  pointer-events: none;
+  user-select: none;
+}
+
 .sidebar-header {
   padding: 14px 14px 10px;
   border-bottom: 1px solid #2a2a4a;
@@ -400,6 +406,7 @@
 }
 
 .modal-section { display: flex; flex-direction: column; gap: 6px; }
+.modal-locked  { opacity: 0.35; pointer-events: none; user-select: none; }
 
 .modal-label {
   font-size: 10px;

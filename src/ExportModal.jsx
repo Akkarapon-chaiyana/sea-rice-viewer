@@ -465,7 +465,7 @@ export default function ExportModal({
           </div>
 
           {/* Scale */}
-          <div className="modal-section">
+          <div className={`modal-section${selectedLayers.length === 0 ? ' modal-locked' : ''}`}>
             <div className="modal-label">Resolution (m/px)</div>
             <div className="modal-scale-row">
               {SCALES.map(s => (
@@ -479,7 +479,7 @@ export default function ExportModal({
           </div>
 
           {/* Export area */}
-          <div className="modal-section">
+          <div className={`modal-section${!scale ? ' modal-locked' : ''}`}>
             <div className="modal-label">Export area</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               {[['country', 'Whole Country'], ['tiles', 'Grid Tiles']].map(([val, lbl]) => (
@@ -525,7 +525,7 @@ export default function ExportModal({
           </div>
 
           {/* Export destination */}
-          <div className="modal-section">
+          <div className={`modal-section${!exportTarget ? ' modal-locked' : ''}`}>
             <div className="modal-label">Export destination</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               {[['drive', '☁ Google Drive'], ['local', '💾 Local Download']].map(([val, lbl]) => (
@@ -584,7 +584,7 @@ export default function ExportModal({
           </div>
 
           {/* Script preview */}
-          <div className="modal-section">
+          <div className={`modal-section${!exportDest ? ' modal-locked' : ''}`}>
             <div className="modal-label" style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 6 }}
               onClick={() => setShowScript(v => !v)}>
               <span style={{ fontSize: 10, color: '#7b8cde' }}>{showScript ? '▾' : '▸'}</span>
@@ -620,11 +620,11 @@ export default function ExportModal({
         </div>
 
         {/* Footer */}
-        <div className="modal-footer">
-          <button className="btn btn-copy" onClick={handleCopy} disabled={!script}>
+        <div className={`modal-footer${!script ? ' modal-locked' : ''}`}>
+          <button className="btn btn-copy" onClick={handleCopy}>
             {copied ? '✓ Copied!' : 'Copy Script'}
           </button>
-          <button className="btn btn-download-py" onClick={handleDownload} disabled={!script}>
+          <button className="btn btn-download-py" onClick={handleDownload}>
             {mergeScript ? '↓ Download 2 scripts' : '↓ Download .py'}
           </button>
         </div>

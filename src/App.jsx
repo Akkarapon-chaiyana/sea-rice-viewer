@@ -12,17 +12,17 @@ const GRID_STEP    = 0.5;  // 0.5° ≈ 55 km, matches gridTiles.js CELL_DEG
 const SEA_BBOX     = [92.1, -11.0, 141.0, 28.5];
 
 const COUNTRIES = [
-  { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                         center: [100.5,  13.5], zoom: 5,  bbox: [ 97.3,  5.5, 105.7, 20.5] },
-  { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', gaul: 'Myanmar',                          center: [ 96.0,  19.0], zoom: 5,  bbox: [ 92.1,  9.6, 101.2, 28.5] },
-  { label: 'Vietnam',     slug: 'vietnam',     iso: 'VNM', gaul: 'Viet Nam',                         center: [106.0,  16.0], zoom: 5,  bbox: [102.1,  8.3, 109.5, 23.4] },
-  { label: 'Laos',        slug: 'laos',        iso: 'LAO', gaul: "Lao People's Democratic Republic", center: [103.0,  18.0], zoom: 6,  bbox: [100.1, 13.9, 107.7, 22.5] },
-  { label: 'Cambodia',    slug: 'cambodia',    iso: 'KHM', gaul: 'Cambodia',                         center: [105.0,  12.5], zoom: 6,  bbox: [102.3,  9.9, 107.7, 14.7] },
-  { label: 'Philippines', slug: 'philippines', iso: 'PHL', gaul: 'Philippines',                      center: [122.0,  12.0], zoom: 5,  bbox: [116.9,  4.6, 126.6, 20.5] },
-  { label: 'Malaysia',    slug: 'malaysia',    iso: 'MYS', gaul: 'Malaysia',                         center: [109.0,   3.5], zoom: 5,  bbox: [ 99.6,  0.8, 119.3,  7.4] },
-  { label: 'Indonesia',   slug: 'indonesia',   iso: 'IDN', gaul: 'Indonesia',                        center: [113.0,  -1.0], zoom: 5,  bbox: [ 95.0,-11.0, 141.0,  5.9] },
-  { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                center: [114.7,   4.5], zoom: 8,  bbox: [114.1,  4.0, 115.4,  5.1] },
-  { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8,  bbox: [124.0, -9.5, 127.4, -8.1] },
-  { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10, bbox: [103.6,  1.1, 104.1,  1.5] },
+  { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                         center: [100.5,  13.5], zoom: 5,  bbox: [ 97.3,  5.5, 105.7, 20.5], years: ['2021'] },
+  { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', gaul: 'Myanmar',                          center: [ 96.0,  19.0], zoom: 5,  bbox: [ 92.1,  9.6, 101.2, 28.5], years: ['2021'] },
+  { label: 'Vietnam',     slug: 'vietnam',     iso: 'VNM', gaul: 'Viet Nam',                         center: [106.0,  16.0], zoom: 5,  bbox: [102.1,  8.3, 109.5, 23.4], years: ['2021'] },
+  { label: 'Laos',        slug: 'laos',        iso: 'LAO', gaul: "Lao People's Democratic Republic", center: [103.0,  18.0], zoom: 6,  bbox: [100.1, 13.9, 107.7, 22.5], years: ['2021'] },
+  { label: 'Cambodia',    slug: 'cambodia',    iso: 'KHM', gaul: 'Cambodia',                         center: [105.0,  12.5], zoom: 6,  bbox: [102.3,  9.9, 107.7, 14.7], years: ['2021'] },
+  { label: 'Philippines', slug: 'philippines', iso: 'PHL', gaul: 'Philippines',                      center: [122.0,  12.0], zoom: 5,  bbox: [116.9,  4.6, 126.6, 20.5], years: ['2021'] },
+  { label: 'Malaysia',    slug: 'malaysia',    iso: 'MYS', gaul: 'Malaysia',                         center: [109.0,   3.5], zoom: 5,  bbox: [ 99.6,  0.8, 119.3,  7.4], years: ['2021'] },
+  { label: 'Indonesia',   slug: 'indonesia',   iso: 'IDN', gaul: 'Indonesia',                        center: [113.0,  -1.0], zoom: 5,  bbox: [ 95.0,-11.0, 141.0,  5.9], years: ['2021'] },
+  { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                center: [114.7,   4.5], zoom: 8,  bbox: [114.1,  4.0, 115.4,  5.1], years: ['2021'] },
+  { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8,  bbox: [124.0, -9.5, 127.4, -8.1], years: ['2021'] },
+  { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10, bbox: [103.6,  1.1, 104.1,  1.5], years: [] },
 ];
 
 // ── SEA-wide 50 km grid (line overlay) ───────────────────────────────────────
@@ -569,7 +569,10 @@ export default function App() {
       boundaryTilesRef.current.country = null;
     }
     if (co && tokenRef.current) loadCountryBoundary(co.gaul);
-    refreshActive(val, year);
+    // Auto-select the first available year for this country if current year is unavailable
+    const nextYear = co?.years.includes(year) ? year : (co?.years[0] ?? year);
+    if (nextYear !== year) setYear(nextYear);
+    refreshActive(val, nextYear);
   }, [year, refreshActive, loadCountryBoundary]);
 
   // ── Year change ───────────────────────────────────────────────────────────
@@ -753,6 +756,9 @@ export default function App() {
             </select>
           </div>
 
+          {/* ── Sections locked until signed in ─────────────────────────── */}
+          <div className={tokenStatus !== 'ok' ? 'sidebar-locked' : ''}>
+
           {/* Country */}
           <div className="section">
             <div className="section-label">Country</div>
@@ -765,7 +771,15 @@ export default function App() {
           <div className="section">
             <div className="section-label">Year</div>
             <select className="select" value={year} onChange={handleYear}>
-              {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+              {YEARS.map(y => {
+                const available = COUNTRIES.find(c => c.label === country)?.years.includes(y) ?? false;
+                return (
+                  <option key={y} value={y} disabled={!available}
+                    style={{ color: available ? undefined : '#555577' }}>
+                    {y}{available ? '' : ' (unavailable)'}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
@@ -895,6 +909,8 @@ export default function App() {
               ↓ Export GeoTIFF (Python)
             </button>
           </div>
+
+          </div>{/* end sidebar-locked */}
 
         </div>
       </aside>
