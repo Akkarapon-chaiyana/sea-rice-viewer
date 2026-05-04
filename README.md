@@ -16,6 +16,64 @@ Then open `http://localhost:5173` in your browser.
 
 ---
 
+## Prerequisites (new users)
+
+Before using the viewer or running any export script, complete the three steps below.
+
+### Step A — Install Python
+
+We recommend **Miniconda** (lightweight) or **Anaconda** (full scientific stack).
+
+| Installer | Download |
+|---|---|
+| Miniconda (recommended) | <https://docs.conda.io/en/latest/miniconda.html> |
+| Anaconda | <https://www.anaconda.com/download> |
+| Python only (advanced) | <https://www.python.org/downloads> |
+
+After installing, open **Anaconda Prompt** (Windows) or **Terminal** (macOS/Linux) and verify:
+
+```bash
+python --version   # should print Python 3.9 or higher
+```
+
+Create a dedicated environment (recommended):
+
+```bash
+conda create -n sea_rice python=3.11
+conda activate sea_rice
+```
+
+Then install all required libraries at once:
+
+```bash
+conda install -c conda-forge earthengine-api requests numpy rasterio gdal
+```
+
+---
+
+### Step B — Create a Google Earth Engine account
+
+1. Go to <https://earthengine.google.com> and click **Sign Up**.
+2. Sign in with a Google account and fill in the registration form.
+3. Select **Use with a Cloud Project** when asked.
+4. Wait for approval (usually instant for academic accounts, up to 24 h otherwise).
+
+---
+
+### Step C — Create a Google Cloud Project and enable the Earth Engine API
+
+GEE requires a linked **Google Cloud Platform (GCP) project** for API access.
+
+1. Go to <https://console.cloud.google.com> and sign in.
+2. Click **Select a project → New Project**, give it a name (e.g. `sea-rice-viewer`), and click **Create**.
+3. Note the **Project ID** shown under the project name — you will need this in the app.
+4. In the search bar type **Earth Engine API**, open it, and click **Enable**.
+5. *(Optional)* If prompted, enable billing — a free-tier account is sufficient for typical use.
+
+Once the project is ready, paste the **Project ID** into the app's Authentication panel and sign in.
+
+---
+
 ## Getting started
 
 1. Enter your **GCP Project ID** in the Authentication panel.
