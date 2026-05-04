@@ -417,7 +417,7 @@ export default function ExportModal({
     triggerDownload(script, `rice_download_${slug}_${year}.py`);
     if (mergeScript) {
       // slight delay so browsers don't block the second download
-      setTimeout(() => triggerDownload(mergeScript, `rice_download_merge_${slug}_${year}.py`), 300);
+      setTimeout(() => triggerDownload(mergeScript, `rice_merge_${slug}_${year}.py`), 300);
     }
   }, [script, mergeScript, slug, year]);
 
