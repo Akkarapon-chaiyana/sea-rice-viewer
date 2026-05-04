@@ -735,7 +735,7 @@ export default function App() {
 
           {/* Authentication */}
           <div className="section">
-            <div className="section-label">Authentication</div>
+            <div className="section-label">Earth Engine Authentication</div>
             <input className="input" value={projectId} onChange={handleProjectChange}
               placeholder="Earth Engine Project ID" style={{ marginBottom: 5 }} />
             <button className={`btn btn-sign-in ${tokenStatus === 'ok' ? 'signed-in' : ''}`}
