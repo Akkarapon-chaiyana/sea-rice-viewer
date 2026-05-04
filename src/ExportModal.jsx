@@ -363,13 +363,19 @@ export default function ExportModal({
   onClose,
 }) {
   const [selected,     setSelected]     = useState({ Mean: false, Std: false, Binary: false, Pseudo: false });
+  // Gate values always start null so the wizard runs sequentially every open.
+  // Text-only fields (folder, outputDir) are remembered via localStorage.
   const [scale,        setScale]        = useState(null);
   const [exportTarget, setExportTarget] = useState(null); // 'country' | 'tiles'
   const [exportDest,   setExportDest]   = useState(null); // 'drive' | 'local'
-  const [folder,       setFolder]       = useState('sea_rice_export');
-  const [outputDir,    setOutputDir]    = useState('./sea_rice_output');
+  const [folder,       setFolder]       = useState(() => localStorage.getItem('sea_rice_folder')    || 'sea_rice_export');
+  const [outputDir,    setOutputDir]    = useState(() => localStorage.getItem('sea_rice_outputDir') || './sea_rice_output');
   const [copied,       setCopied]       = useState(false);
   const [showScript,   setShowScript]   = useState(false);
+
+  // Persist text fields so the user doesn't have to retype folder paths
+  useEffect(() => { localStorage.setItem('sea_rice_folder',    folder);    }, [folder]);
+  useEffect(() => { localStorage.setItem('sea_rice_outputDir', outputDir); }, [outputDir]);
 
   const handleExportTarget = useCallback((val) => setExportTarget(val), []);
   const handleClose        = useCallback(() => onClose(), [onClose]);
@@ -416,13 +422,12 @@ export default function ExportModal({
       a.click();
       URL.revokeObjectURL(url);
     };
-    const slug = country.toLowerCase();
-    triggerDownload(script, `sea_rice_export_${slug}_${year}.py`);
+    triggerDownload(script, `rice_download_${slug}_${year}.py`);
     if (mergeScript) {
       // slight delay so browsers don't block the second download
-      setTimeout(() => triggerDownload(mergeScript, `sea_rice_merge_${slug}_${year}.py`), 300);
+      setTimeout(() => triggerDownload(mergeScript, `rice_download_merge_${slug}_${year}.py`), 300);
     }
-  }, [script, mergeScript, country, year]);
+  }, [script, mergeScript, slug, year]);
 
   const handleDownloadRequirements = useCallback(() => {
     const blob = new Blob([REQUIREMENTS_TXT], { type: 'text/plain' });
@@ -479,7 +484,7 @@ export default function ExportModal({
           </div>
 
           {/* Export area */}
-          <div className={`modal-section${!scale ? ' modal-locked' : ''}`}>
+          <div className={`modal-section${selectedLayers.length === 0 || !scale ? ' modal-locked' : ''}`}>
             <div className="modal-label">Export area</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               {[['country', 'Whole Country'], ['tiles', 'Grid Tiles']].map(([val, lbl]) => (
@@ -525,7 +530,7 @@ export default function ExportModal({
           </div>
 
           {/* Export destination */}
-          <div className={`modal-section${!exportTarget ? ' modal-locked' : ''}`}>
+          <div className={`modal-section${selectedLayers.length === 0 || !scale || !exportTarget ? ' modal-locked' : ''}`}>
             <div className="modal-label">Export destination</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               {[['drive', '☁ Google Drive'], ['local', '💾 Local Download']].map(([val, lbl]) => (
@@ -584,7 +589,7 @@ export default function ExportModal({
           </div>
 
           {/* Script preview */}
-          <div className={`modal-section${!exportDest ? ' modal-locked' : ''}`}>
+          <div className={`modal-section${selectedLayers.length === 0 || !scale || !exportTarget || !exportDest ? ' modal-locked' : ''}`}>
             <div className="modal-label" style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 6 }}
               onClick={() => setShowScript(v => !v)}>
               <span style={{ fontSize: 10, color: '#7b8cde' }}>{showScript ? '▾' : '▸'}</span>

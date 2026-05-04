@@ -765,6 +765,11 @@ export default function App() {
             <select className="select" value={country} onChange={handleCountry}>
               {COUNTRIES.map(c => <option key={c.iso} value={c.label}>{c.label}</option>)}
             </select>
+            {COUNTRIES.find(c => c.label === country)?.years.length === 0 && (
+              <div className="auth-status hint" style={{ marginTop: 4 }}>
+                {country} is not included in the analysis.
+              </div>
+            )}
           </div>
 
           {/* Year */}
