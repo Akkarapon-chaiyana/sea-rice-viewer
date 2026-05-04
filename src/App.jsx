@@ -737,7 +737,7 @@ export default function App() {
           <div className="section">
             <div className="section-label">Authentication</div>
             <input className="input" value={projectId} onChange={handleProjectChange}
-              placeholder="your-gcp-project-id" style={{ marginBottom: 5 }} />
+              placeholder="Earth Engine Project ID" style={{ marginBottom: 5 }} />
             <button className={`btn btn-sign-in ${tokenStatus === 'ok' ? 'signed-in' : ''}`}
               onClick={handleSignIn} disabled={tokenStatus === 'fetching'}>
               {tokenStatus === 'fetching' && <span className="spin">⟳</span>}
