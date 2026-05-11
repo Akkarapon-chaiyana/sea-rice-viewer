@@ -2,15 +2,11 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import maplibregl from 'maplibre-gl';
 import './App.css';
 import ExportModal from './ExportModal';
-import { generateVisibleGrid, cellBbox, generateCellsForBbox } from './utils/gridTiles';
+import { cellBbox, generateCellsForBbox, CELL_DEG } from './utils/gridTiles';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const ASSET_PREFIX = 'projects/tony-1122/assets/NIE/rice/';
 const GEE_API      = 'https://earthengine.googleapis.com/v1';
-const GRID_STEP    = 0.5;  // 0.5° ≈ 55 km, matches gridTiles.js CELL_DEG
-// Bounding box covering all SEA countries
-const SEA_BBOX     = [92.1, -11.0, 141.0, 28.5];
-
 const COUNTRIES = [
   { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                         center: [100.5,  13.5], zoom: 5,  bbox: [ 97.3,  5.5, 105.7, 20.5], years: ['2021'] },
   { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', gaul: 'Myanmar',                          center: [ 96.0,  19.0], zoom: 5,  bbox: [ 92.1,  9.6, 101.2, 28.5], years: ['2021'] },
@@ -24,18 +20,6 @@ const COUNTRIES = [
   { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8,  bbox: [124.0, -9.5, 127.4, -8.1], years: ['2021'] },
   { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10, bbox: [103.6,  1.1, 104.1,  1.5], years: [] },
 ];
-
-// ── SEA-wide 50 km grid (line overlay) ───────────────────────────────────────
-function generateSEAGrid() {
-  const [west, south, east, north] = SEA_BBOX;
-  const s = GRID_STEP;
-  const features = [];
-  for (let lon = Math.floor(west/s)*s; lon <= east;  lon = +(lon+s).toFixed(6))
-    features.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[lon, south], [lon, north]] } });
-  for (let lat = Math.floor(south/s)*s; lat <= north; lat = +(lat+s).toFixed(6))
-    features.push({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [[west, lat], [east, lat]] } });
-  return { type: 'FeatureCollection', features };
-}
 
 const SEA_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
 
@@ -263,7 +247,6 @@ export default function App() {
   const projectRef = useRef('');
   const layersRef  = useRef(initLayers());
   const seaOnRef   = useRef(false);
-  const gridOnRef  = useRef(false);
   const countryRef = useRef('Thailand');
   // Store boundary tile URLs so they can be restored after basemap switch
   const boundaryTilesRef  = useRef({ country: null, sea: null });
@@ -279,7 +262,6 @@ export default function App() {
   const [tokenStatus, setTokenStatus] = useState(null);
   const [layers,      setLayers]      = useState(initLayers);
   const [seaOn,       setSeaOn]       = useState(false);
-  const [gridOn,      setGridOn]      = useState(false);
   const [exportOpen,  setExportOpen]  = useState(false);
 
   // ── Tile-selection state (for export) ─────────────────────────────────────
@@ -398,8 +380,6 @@ export default function App() {
             paint: { 'raster-opacity': s.enabled ? s.opacity : 0 } });
         }
       });
-      // Restore SEA-wide 50km grid
-      if (gridOnRef.current) applyGrid(map);
       // Restore boundaries
       const { country: cUrl, sea: sUrl } = boundaryTilesRef.current;
       if (sUrl && seaOnRef.current) {
@@ -565,28 +545,6 @@ export default function App() {
     });
   }, [loadLayer, removeLayerFromMap]);
 
-  // ── Grid helpers — SEA-wide line overlay ─────────────────────────────────
-  const applyGrid = useCallback((map) => {
-    if (map.getLayer('grid-layer')) map.removeLayer('grid-layer');
-    if (map.getSource('grid-src'))  map.removeSource('grid-src');
-    map.addSource('grid-src', { type: 'geojson', data: generateSEAGrid() });
-    map.addLayer({ id: 'grid-layer', type: 'line', source: 'grid-src',
-      paint: { 'line-color': '#ffffff', 'line-width': 0.5, 'line-opacity': 0.4 } });
-  }, []);
-
-  const handleGrid = useCallback((checked) => {
-    setGridOn(checked);
-    gridOnRef.current = checked;
-    const map = mapRef.current;
-    if (!map) return;
-    if (checked) {
-      applyGrid(map);
-    } else {
-      if (map.getLayer('grid-layer')) map.removeLayer('grid-layer');
-      if (map.getSource('grid-src'))  map.removeSource('grid-src');
-    }
-  }, [applyGrid]);
-
   // ── Country change ────────────────────────────────────────────────────────
   const handleCountry = useCallback((e) => {
     const val = e.target.value;
@@ -601,11 +559,13 @@ export default function App() {
       if (map.getSource('boundary-country'))      map.removeSource('boundary-country');
       boundaryTilesRef.current.country = null;
     }
-    if (co && tokenRef.current) loadCountryBoundary(co.gaul);
+    if (co && co.years.length > 0 && tokenRef.current) loadCountryBoundary(co.gaul);
     // Auto-select the first available year for this country if current year is unavailable
     const nextYear = co?.years.includes(year) ? year : (co?.years[0] ?? year);
     if (nextYear !== year) setYear(nextYear);
     refreshActive(val, nextYear);
+    // Refresh tile grid to show new country's cells
+    if (tileSelectRef.current) setTimeout(() => updateTileGridRef.current?.(), 0);
   }, [year, refreshActive, loadCountryBoundary]);
 
   // ── Year change ───────────────────────────────────────────────────────────
@@ -627,12 +587,30 @@ export default function App() {
     }
   }, []);
 
-  // ── Tile grid: refresh visible cells (reads from selectedTilesRef) ─────────
+  // ── Tile grid: generate cells for current country bbox ───────────────────
   const updateTileGrid = useCallback(() => {
     const map = mapRef.current;
     if (!map?.getSource('tile-select-src')) return;
-    const selIds    = new Set(selectedTilesRef.current.keys());
-    const features  = generateVisibleGrid(map, selIds);
+    const co     = COUNTRIES.find(c => c.label === countryRef.current);
+    const expandedBbox = co
+      ? [co.bbox[0] - 1.0, co.bbox[1] - 1.0, co.bbox[2] + 1.0, co.bbox[3] + 1.0]
+      : null;
+    const cells  = expandedBbox ? generateCellsForBbox(expandedBbox) : [];
+    const selIds = new Set(selectedTilesRef.current.keys());
+    const features = cells.map(cell => ({
+      type: 'Feature',
+      properties: { id: cell.id, lon: cell.bbox[0], lat: cell.bbox[1], selected: selIds.has(cell.id) },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [[
+          [cell.bbox[0], cell.bbox[1]],
+          [cell.bbox[2], cell.bbox[1]],
+          [cell.bbox[2], cell.bbox[3]],
+          [cell.bbox[0], cell.bbox[3]],
+          [cell.bbox[0], cell.bbox[1]],
+        ]],
+      },
+    }));
     map.getSource('tile-select-src').setData({ type: 'FeatureCollection', features });
   }, []);
 
@@ -673,12 +651,6 @@ export default function App() {
           paint: { 'line-color': '#ff8c00', 'line-width': 1.5, 'line-opacity': 0.85 } });
       }
 
-      // Viewport update on pan/zoom
-      const moveHandler = () => updateTileGrid();
-      tileMoveHandlerRef.current = moveHandler;
-      map.on('moveend', moveHandler);
-      map.on('zoomend', moveHandler);
-
       // Click a cell → toggle selection
       const clickHandler = (e) => {
         const f = e.features?.[0];
@@ -690,11 +662,7 @@ export default function App() {
           if (next.has(id)) next.delete(id); else next.set(id, { id, bbox });
           selectedTilesRef.current = next;
           // Re-render immediately (don't wait for state cycle)
-          if (mapRef.current?.getSource('tile-select-src')) {
-            const selIds   = new Set(next.keys());
-            const features = generateVisibleGrid(mapRef.current, selIds);
-            mapRef.current.getSource('tile-select-src').setData({ type: 'FeatureCollection', features });
-          }
+          if (updateTileGridRef.current) updateTileGridRef.current();
           return next;
         });
       };
@@ -804,13 +772,13 @@ export default function App() {
           <div className="section">
             <div className="section-label">Country</div>
             <select className="select" value={country} onChange={handleCountry}>
-              {COUNTRIES.map(c => <option key={c.iso} value={c.label}>{c.label}</option>)}
+              {COUNTRIES.map(c => (
+                <option key={c.iso} value={c.label} disabled={c.years.length === 0}
+                  style={{ color: c.years.length === 0 ? '#555577' : undefined }}>
+                  {c.label}{c.years.length === 0 ? ' (not in analysis)' : ''}
+                </option>
+              ))}
             </select>
-            {COUNTRIES.find(c => c.label === country)?.years.length === 0 && (
-              <div className="auth-status hint" style={{ marginTop: 4 }}>
-                {country} is not included in the analysis.
-              </div>
-            )}
           </div>
 
           {/* Year */}
@@ -876,11 +844,6 @@ export default function App() {
                 onChange={e => handleSea(e.target.checked)} />
               <span className="checkbox-label">SEA country boundaries</span>
             </label>
-            <label className="checkbox-row">
-              <input type="checkbox" checked={gridOn}
-                onChange={e => handleGrid(e.target.checked)} />
-              <span className="checkbox-label">50 km × 50 km grid</span>
-            </label>
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 20, height: 2, background: '#bf40ff', display: 'inline-block', borderRadius: 1 }} />
               <span className="legend-swatch-label">Selected country</span>
@@ -924,7 +887,9 @@ export default function App() {
             ))}
           </div>
 
-          {/* Export */}
+          </div>{/* end sidebar-locked */}
+
+          {/* Export — outside locked section, no auth needed to select tiles or generate script */}
           <div className="section">
             <div className="section-label">Export</div>
 
@@ -956,8 +921,6 @@ export default function App() {
               ↓ Export GeoTIFF (Python)
             </button>
           </div>
-
-          </div>{/* end sidebar-locked */}
 
         </div>
       </aside>
