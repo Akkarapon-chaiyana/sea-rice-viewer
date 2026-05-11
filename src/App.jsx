@@ -275,6 +275,7 @@ export default function App() {
   const [year,        setYear]        = useState('2021');
   const [basemap,     setBasemap]     = useState('satellite');
   const [projectId,   setProjectId]   = useState('');
+  const [projectError, setProjectError] = useState(null);
   const [tokenStatus, setTokenStatus] = useState(null);
   const [layers,      setLayers]      = useState(initLayers);
   const [seaOn,       setSeaOn]       = useState(false);
@@ -472,6 +473,9 @@ export default function App() {
       setLayers(prev => ({ ...prev, [typeId]: next }));
     } catch (err) {
       const msg = err.message?.toLowerCase() ?? '';
+      if (msg.includes('permission') || msg.includes('serviceusage') || msg.includes('caller does not have')) {
+        setProjectError('Project ID rejected — check that Earth Engine API is enabled and you have access to this project.');
+      }
       const friendly = msg.includes('not found') || msg.includes('does not exist')
         ? `${countryObj.label} is not included in the analysis.`
         : err.message;
@@ -587,6 +591,11 @@ export default function App() {
     const val = e.target.value;
     setProjectId(val);
     projectRef.current = val;
+    setProjectError(null);
+    // GCP project IDs: 6-30 chars, lowercase letters/digits/hyphens, starts with a letter
+    if (val && !/^[a-z][a-z0-9\-]{4,28}[a-z0-9]$/.test(val)) {
+      setProjectError('Invalid format. Project IDs are lowercase letters, digits, and hyphens (6–30 chars).');
+    }
   }, []);
 
   // ── Tile grid: refresh visible cells (reads from selectedTilesRef) ─────────
@@ -737,7 +746,9 @@ export default function App() {
           <div className="section">
             <div className="section-label">Earth Engine Authentication</div>
             <input className="input" value={projectId} onChange={handleProjectChange}
-              placeholder="Earth Engine Project ID" style={{ marginBottom: 5 }} />
+              placeholder="Earth Engine Project ID"
+              style={{ marginBottom: projectError ? 3 : 5, borderColor: projectError ? '#e06c75' : undefined }} />
+            {projectError && <div className="auth-status error" style={{ marginBottom: 5 }}>{projectError}</div>}
             <button className={`btn btn-sign-in ${tokenStatus === 'ok' ? 'signed-in' : ''}`}
               onClick={handleSignIn} disabled={tokenStatus === 'fetching'}>
               {tokenStatus === 'fetching' && <span className="spin">⟳</span>}
