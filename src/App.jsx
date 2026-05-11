@@ -339,7 +339,7 @@ export default function App() {
     } catch (e) {
       const msg = (e.message || '').toLowerCase();
       if (msg.includes('permission') || msg.includes('serviceusage') || msg.includes('caller does not have')) {
-        setProjectError('Project ID rejected — check that Earth Engine API is enabled and you have access to this project.');
+        setProjectError('Project ID rejected — check your project ID correctly before sign in.');
       }
       console.error('Country boundary error:', e.message);
     }
@@ -449,7 +449,7 @@ export default function App() {
                 const errMsg  = (errBody.error?.message || '').toLowerCase();
                 if (errMsg.includes('permission') || errMsg.includes('serviceusage')
                     || errMsg.includes('caller does not have') || res.status === 403 || res.status === 404) {
-                  setProjectError('Project ID rejected — check that Earth Engine API is enabled and you have access to this project.');
+                  setProjectError('Project ID rejected — check your project ID correctly before sign in.');
                   setTokenStatus('project-error');
                   return;
                 }
@@ -501,7 +501,7 @@ export default function App() {
       let friendly;
       if (msg.includes('permission') || msg.includes('serviceusage') || msg.includes('caller does not have')
           || msg.includes('project') && msg.includes('not found')) {
-        setProjectError('Project ID rejected — check that Earth Engine API is enabled and you have access to this project.');
+        setProjectError('Project ID rejected — check your project ID correctly before sign in.');
         friendly = 'Check the Project ID above.';
       } else if (msg.includes('not found') || msg.includes('does not exist')) {
         friendly = `${countryObj.label} is not included in the analysis.`;
