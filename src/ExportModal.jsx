@@ -559,10 +559,12 @@ export default function ExportModal({
                   Uses <code style={{ background: '#1a1a32', padding: '1px 4px', borderRadius: 3 }}>getDownloadURL()</code>
                   — direct download to local disk. Suitable for tiles up to ~100 MB. For large areas use Drive.
                 </div>
-                <div style={{ fontSize: 10, color: '#9aa0c8', marginTop: 6, lineHeight: 1.6,
+                <div style={{ fontSize: 10, color: '#9aa0c8', marginTop: 6, lineHeight: 1.8,
                   background: '#13132a', borderRadius: 4, padding: '6px 10px' }}>
                   After downloading, run the script with:<br />
-                  <code style={{ color: '#61afef' }}>python rice_download_{slug}_{year}.py</code>
+                  <code style={{ color: '#61afef' }}>python rice_download_{slug}_{year}.py</code><br />
+                  <span style={{ color: '#666688' }}>If the output contains multiple images, merge them with:</span><br />
+                  <code style={{ color: '#98c379' }}>python rice_merge_{slug}_{year}.py</code>
                 </div>
               </>
             )}
