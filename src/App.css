@@ -256,6 +256,12 @@
   height: 3px;
 }
 
+.opacity-label {
+  font-size: 10px;
+  color: #666688;
+  flex-shrink: 0;
+}
+
 .opacity-val {
   font-size: 10px;
   color: #7b8cde;

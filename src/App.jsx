@@ -812,6 +812,7 @@ export default function App() {
                   {s.error && <div className="error-box">{s.error}</div>}
                   {s.enabled && !s.loading && (
                     <div className="opacity-row">
+                      <span className="opacity-label">Opacity:</span>
                       <input type="range" min={0} max={1} step={0.05} value={s.opacity}
                         onChange={e => handleOpacity(lt.id, Number(e.target.value))} />
                       <span className="opacity-val">{Math.round(s.opacity * 100)}%</span>
