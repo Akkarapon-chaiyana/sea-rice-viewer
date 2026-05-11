@@ -439,7 +439,7 @@ export default function App() {
         }
       },
     });
-    client.requestAccessToken();
+    client.requestAccessToken({ prompt: '' });
   }, [loadCountryBoundary]);
 
   // ── Load a single GEE layer ───────────────────────────────────────────────
