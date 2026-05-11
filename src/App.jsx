@@ -260,7 +260,7 @@ export default function App() {
   const mapEl      = useRef(null);
   const mapRef     = useRef(null);
   const tokenRef   = useRef('');
-  const projectRef = useRef('');
+  const projectRef = useRef('tony-1122');
   const layersRef  = useRef(initLayers());
   const seaOnRef   = useRef(false);
   const gridOnRef  = useRef(false);
@@ -274,7 +274,6 @@ export default function App() {
   const [country,     setCountry]     = useState('Thailand');
   const [year,        setYear]        = useState('2021');
   const [basemap,     setBasemap]     = useState('satellite');
-  const [projectId,   setProjectId]   = useState('');
   const [tokenStatus, setTokenStatus] = useState(null);
   const [layers,      setLayers]      = useState(initLayers);
   const [seaOn,       setSeaOn]       = useState(false);
@@ -582,13 +581,6 @@ export default function App() {
     refreshActive(country, val);
   }, [country, refreshActive]);
 
-  // ── Project ID ────────────────────────────────────────────────────────────
-  const handleProjectChange = useCallback((e) => {
-    const val = e.target.value;
-    setProjectId(val);
-    projectRef.current = val;
-  }, []);
-
   // ── Tile grid: refresh visible cells (reads from selectedTilesRef) ─────────
   const updateTileGrid = useCallback(() => {
     const map = mapRef.current;
@@ -714,7 +706,7 @@ export default function App() {
   }, [loadSEABoundary, addRasterLayer]);
 
   const anyActive = LAYER_TYPES.some(lt => layers[lt.id].enabled);
-  const canLoad   = tokenStatus === 'ok' && projectId.trim();
+  const canLoad   = tokenStatus === 'ok';
 
   return (
     <div className="app">
@@ -736,8 +728,6 @@ export default function App() {
           {/* Authentication */}
           <div className="section">
             <div className="section-label">Earth Engine Authentication</div>
-            <input className="input" value={projectId} onChange={handleProjectChange}
-              placeholder="Earth Engine Project ID" style={{ marginBottom: 5 }} />
             <button className={`btn btn-sign-in ${tokenStatus === 'ok' ? 'signed-in' : ''}`}
               onClick={handleSignIn} disabled={tokenStatus === 'fetching'}>
               {tokenStatus === 'fetching' && <span className="spin">⟳</span>}
@@ -745,7 +735,7 @@ export default function App() {
             </button>
             {tokenStatus === 'ok'    && <div className="auth-status ok">Authentication successful</div>}
             {tokenStatus === 'error' && <div className="auth-status error">Sign-in failed — check GEE access</div>}
-            {!tokenStatus            && <div className="auth-status hint">Enter project ID then sign in.</div>}
+            {!tokenStatus            && <div className="auth-status hint">Sign in with your Earth Engine account.</div>}
           </div>
 
           {/* Basemap */}
@@ -793,7 +783,7 @@ export default function App() {
             <div className="section-label">Map Layers</div>
             {!canLoad && (
               <div className="auth-status hint" style={{ marginBottom: 6 }}>
-                Sign in and enter Project ID to enable layers.
+                Sign in to enable layers.
               </div>
             )}
             {LAYER_TYPES.map(lt => {
