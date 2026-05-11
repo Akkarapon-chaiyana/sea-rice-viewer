@@ -336,7 +336,13 @@ export default function App() {
       addRasterLayer(map, 'boundary-country', 'boundary-layer-country', tileUrl);
       // Always move to absolute top after adding
       if (map.getLayer('boundary-layer-country')) map.moveLayer('boundary-layer-country');
-    } catch (e) { console.error('Country boundary error:', e.message); }
+    } catch (e) {
+      const msg = (e.message || '').toLowerCase();
+      if (msg.includes('permission') || msg.includes('serviceusage') || msg.includes('caller does not have')) {
+        setProjectError('Project ID rejected — check that Earth Engine API is enabled and you have access to this project.');
+      }
+      console.error('Country boundary error:', e.message);
+    }
   }, [fetchGEETileUrl, addRasterLayer]);
 
   // ── Load SEA boundaries from FAO GAUL (outline only, cyan) ───────────────
@@ -473,12 +479,16 @@ export default function App() {
       setLayers(prev => ({ ...prev, [typeId]: next }));
     } catch (err) {
       const msg = err.message?.toLowerCase() ?? '';
-      if (msg.includes('permission') || msg.includes('serviceusage') || msg.includes('caller does not have')) {
+      let friendly;
+      if (msg.includes('permission') || msg.includes('serviceusage') || msg.includes('caller does not have')
+          || msg.includes('project') && msg.includes('not found')) {
         setProjectError('Project ID rejected — check that Earth Engine API is enabled and you have access to this project.');
+        friendly = 'Check the Project ID above.';
+      } else if (msg.includes('not found') || msg.includes('does not exist')) {
+        friendly = `${countryObj.label} is not included in the analysis.`;
+      } else {
+        friendly = err.message;
       }
-      const friendly = msg.includes('not found') || msg.includes('does not exist')
-        ? `${countryObj.label} is not included in the analysis.`
-        : err.message;
       const next = { ...layersRef.current[typeId], loading: false, error: friendly };
       layersRef.current = { ...layersRef.current, [typeId]: next };
       setLayers(prev => ({ ...prev, [typeId]: next }));
