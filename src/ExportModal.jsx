@@ -64,11 +64,11 @@ function genDriveCountry({ country, slug, gaulName, year, scale, folder, selecte
     `fc       = (ee.FeatureCollection('FAO/GAUL/2015/level0')\n` +
     `              .filter(ee.Filter.eq('ADM0_NAME', GAUL_NAME)))\n` +
     `geometry = fc.geometry()\n\n` +
-    `print(f'Exporting {country} ({year}) at {scale} m ...')\n` +
+    `print(f'Exporting {COUNTRY} ({YEAR}) at {SCALE} m ...')\n` +
     selectedLayers.map(l =>
       `\n# ── ${l.label}\n` +
       layerImg(l, slug) + `.clip(geometry)\n` +
-      `desc  = f'${outSuf(l)}_{country}_{year}'\n` +
+      `desc  = f'${outSuf(l)}_{COUNTRY}_{YEAR}'\n` +
       `task  = ee.batch.Export.image.toDrive(\n` +
       `    image=img, description=desc, folder=OUTPUT_FOLDER,\n` +
       `    fileNamePrefix=desc, region=geometry,\n` +
