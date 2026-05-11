@@ -94,7 +94,7 @@ function genDriveTiles({ country, slug, year, scale, folder, selectedLayers, act
     `SCALE         = ${scale}\n` +
     `OUTPUT_FOLDER = '${folder}'\n\n` +
     `TILES = [\n${tilesList}\n]\n\n` +
-    `print(f'Submitting {len(TILES)} tile exports for ${country} ({year}) at ${scale} m ...')\n` +
+    `print(f'Submitting {len(TILES)} tile exports for ${country} (${year}) at ${scale} m ...')\n` +
     selectedLayers.map(l =>
       `\n# ── ${l.label}\n` +
       `for i, tile in enumerate(TILES):\n` +
