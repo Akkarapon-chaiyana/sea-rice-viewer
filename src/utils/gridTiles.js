@@ -31,7 +31,7 @@ export function generateVisibleGrid(map, selectedIds) {
   const north = Math.ceil(Math.min(b.getNorth(),  85) / CELL_DEG) * CELL_DEG;
 
   const features = [];
-  const MAX_CELLS = 2500;
+  const MAX_CELLS = 10000;
 
   outer:
   for (let lon = west; lon < east; lon = round(lon + CELL_DEG)) {
