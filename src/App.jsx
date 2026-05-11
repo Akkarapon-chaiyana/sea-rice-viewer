@@ -434,11 +434,30 @@ export default function App() {
     const client = window.google.accounts.oauth2.initTokenClient({
       client_id: clientId,
       scope: 'https://www.googleapis.com/auth/earthengine',
-      callback: (resp) => {
+      callback: async (resp) => {
         if (resp.access_token) {
           tokenRef.current = resp.access_token;
+          // Validate project ID immediately after sign-in
+          if (projectRef.current) {
+            try {
+              const res = await fetch(
+                `${GEE_API}/projects/${projectRef.current}/operations?pageSize=1`,
+                { headers: { Authorization: `Bearer ${resp.access_token}`, 'x-goog-user-project': projectRef.current } }
+              );
+              if (!res.ok) {
+                const errBody = await res.json().catch(() => ({}));
+                const errMsg  = (errBody.error?.message || '').toLowerCase();
+                if (errMsg.includes('permission') || errMsg.includes('serviceusage')
+                    || errMsg.includes('caller does not have') || res.status === 403 || res.status === 404) {
+                  setProjectError('Project ID rejected — check that Earth Engine API is enabled and you have access to this project.');
+                  setTokenStatus('project-error');
+                  return;
+                }
+              }
+            } catch (_) { /* network error — fall through */ }
+          }
+          setProjectError(null);
           setTokenStatus('ok');
-          // Load country boundary after sign-in
           const co = COUNTRIES.find(c => c.label === countryRef.current);
           if (co) loadCountryBoundary(co.gaul);
         } else {
@@ -764,9 +783,10 @@ export default function App() {
               {tokenStatus === 'fetching' && <span className="spin">⟳</span>}
               {tokenStatus === 'ok' ? '✓ Signed In' : 'Sign In with Google'}
             </button>
-            {tokenStatus === 'ok'    && <div className="auth-status ok">Authentication successful</div>}
-            {tokenStatus === 'error' && <div className="auth-status error">Sign-in failed — check GEE access</div>}
-            {!tokenStatus            && <div className="auth-status hint">Enter project ID then sign in.</div>}
+            {tokenStatus === 'ok'           && <div className="auth-status ok">Authentication successful</div>}
+            {tokenStatus === 'project-error' && <div className="auth-status error">Signed in, but project ID is invalid — correct it and sign in again.</div>}
+            {tokenStatus === 'error'         && <div className="auth-status error">Sign-in failed — check GEE access</div>}
+            {!tokenStatus                    && <div className="auth-status hint">Enter project ID then sign in.</div>}
           </div>
 
           {/* Basemap */}
