@@ -416,9 +416,9 @@ export default function App() {
       if (tileSelectRef.current) {
         map.addSource('tile-select-src', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({ id: 'tile-select-fill', type: 'fill', source: 'tile-select-src',
-          paint: { 'fill-color': ['case', ['get', 'selected'], '#7b8cde', '#8899cc'], 'fill-opacity': ['case', ['get', 'selected'], 0.40, 0.07] } });
+          paint: { 'fill-color': ['case', ['get', 'selected'], '#7b8cde', '#8899cc'], 'fill-opacity': ['case', ['get', 'selected'], 0.40, 0.10] } });
         map.addLayer({ id: 'tile-select-line', type: 'line', source: 'tile-select-src',
-          paint: { 'line-color': '#ff8c00', 'line-width': 1.0, 'line-opacity': 0.60 } });
+          paint: { 'line-color': '#ff8c00', 'line-width': 1.5, 'line-opacity': 0.85 } });
         setTimeout(() => { if (updateTileGridRef.current) updateTileGridRef.current(); }, 50);
       }
     });
@@ -667,10 +667,10 @@ export default function App() {
         map.addLayer({ id: 'tile-select-fill', type: 'fill', source: 'tile-select-src',
           paint: {
             'fill-color':   ['case', ['get', 'selected'], '#ff8c00', '#ffcc88'],
-            'fill-opacity': ['case', ['get', 'selected'], 0.50,       0.08],
+            'fill-opacity': ['case', ['get', 'selected'], 0.50,       0.10],
           } });
         map.addLayer({ id: 'tile-select-line', type: 'line', source: 'tile-select-src',
-          paint: { 'line-color': '#ff8c00', 'line-width': 1.0, 'line-opacity': 0.60 } });
+          paint: { 'line-color': '#ff8c00', 'line-width': 1.5, 'line-opacity': 0.85 } });
       }
 
       // Viewport update on pan/zoom

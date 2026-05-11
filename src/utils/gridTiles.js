@@ -22,7 +22,7 @@ export function cellBbox(lon, lat) {
  */
 export function generateVisibleGrid(map, selectedIds) {
   const zoom = map.getZoom();
-  if (zoom < 4) return [];
+  if (zoom < 3) return [];
 
   const b = map.getBounds();
   const west  = Math.floor(b.getWest() / CELL_DEG) * CELL_DEG;
