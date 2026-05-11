@@ -775,7 +775,7 @@ export default function App() {
               {COUNTRIES.map(c => (
                 <option key={c.iso} value={c.label} disabled={c.years.length === 0}
                   style={{ color: c.years.length === 0 ? '#555577' : undefined }}>
-                  {c.label}{c.years.length === 0 ? ' (not in analysis)' : ''}
+                  {c.label}
                 </option>
               ))}
             </select>
@@ -790,7 +790,7 @@ export default function App() {
                 return (
                   <option key={y} value={y} disabled={!available}
                     style={{ color: available ? undefined : '#555577' }}>
-                    {y}{available ? '' : ' (unavailable)'}
+                    {y}
                   </option>
                 );
               })}
