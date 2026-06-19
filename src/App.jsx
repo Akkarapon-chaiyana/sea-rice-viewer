@@ -45,8 +45,8 @@ const LAYER_TYPES = [
   {
     id: 'Binary', label: 'Binary (prob ≥ 50%)', color: '#61afef',
     vis: { ranges: [{ min: 0, max: 1 }], paletteColors: ['000000','00ff00'] },
-    assetFn: (slug, year) => `${ASSET_PREFIX}SEA_Avg_${slug}_${year}`,
-    isBinary: true,
+    assetFn: (slug, year) => `${ASSET_PREFIX}SEA_binary_${slug}_${year}`,
+    isBinary: false,
     legendType: 'swatch',
     legendSwatches: [
       { color: '#000000', label: 'Masked / Non-rice' },
