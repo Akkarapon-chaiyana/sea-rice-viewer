@@ -189,18 +189,13 @@ function applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask) {
       arguments: { image: inner },
     },
   });
-  // Force all pixels unmasked: updateMask(constant(1)) exposes nodata as 0
   const unmaskExpr = (inner) => ({
     functionInvocationValue: {
-      functionName: 'Image.updateMask',
+      functionName: 'Image.unmask',
       arguments: {
-        image: inner,
-        mask: {
-          functionInvocationValue: {
-            functionName: 'Image.constant',
-            arguments: { value: { constantValue: 1 } },
-          },
-        },
+        image:        inner,
+        value:        { constantValue: 0 },
+        sameFootprint: { constantValue: false },
       },
     },
   });
