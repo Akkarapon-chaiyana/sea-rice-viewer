@@ -419,6 +419,14 @@ export default function App() {
           map.addLayer({ id: `gee-layer-${lt.id}`, type: 'raster', source: `gee-${lt.id}`,
             paint: { 'raster-opacity': s.enabled ? s.opacity : 0 } });
         }
+        // Restore per-country sub-layers (All countries mode)
+        (s.allLayers ?? []).forEach(({ slug, tileUrl }) => {
+          const srcId = `gee-${lt.id}-${slug}`;
+          const lyrId = `gee-layer-${lt.id}-${slug}`;
+          map.addSource(srcId, { type: 'raster', tiles: [tileUrl], tileSize: 256 });
+          map.addLayer({ id: lyrId, type: 'raster', source: srcId,
+            paint: { 'raster-opacity': s.enabled ? s.opacity : 0 } });
+        });
       });
       // Restore boundaries
       const { country: cUrl, sea: sUrl } = boundaryTilesRef.current;
@@ -500,11 +508,38 @@ export default function App() {
 
     setLayers(prev => ({ ...prev, [typeId]: { ...prev[typeId], loading: true, error: null } }));
 
+    if (isAll) {
+      // Fire one request per country in parallel; skip missing assets silently.
+      const supported = COUNTRIES.filter(c => c.years.length > 0);
+      const results = await Promise.all(supported.map(async co => {
+        try {
+          const expr = buildExpression(lt.assetFn(co.slug, yearVal), co.gaul, lt.isBinary, lt.isSelfMask);
+          const tileUrl = await fetchGEETileUrl(expr, lt.vis);
+          return { slug: co.slug, tileUrl };
+        } catch {
+          return null;
+        }
+      }));
+      const loaded = results.filter(Boolean);
+      const opacity = layersRef.current[typeId].opacity;
+      loaded.forEach(({ slug, tileUrl }) => {
+        addRasterLayer(map, `gee-${typeId}-${slug}`, `gee-layer-${typeId}-${slug}`, tileUrl, opacity);
+      });
+      ['boundary-layer-sea', 'boundary-layer-country'].forEach(id => {
+        if (map.getLayer(id)) map.moveLayer(id);
+      });
+      const next = { enabled: true, opacity, loading: false, error: null, mapName: null, tileUrl: null,
+        allLayers: loaded };
+      layersRef.current = { ...layersRef.current, [typeId]: next };
+      setLayers(prev => ({ ...prev, [typeId]: next }));
+      return;
+    }
+
     try {
-      const expression = isAll
-        ? buildMosaicExpression(lt, yearVal, lt.isBinary, lt.isSelfMask)
-        : buildExpression(lt.assetFn(countryObj.slug, yearVal), countryObj.gaul, lt.isBinary, lt.isSelfMask);
-      const tileUrl  = await fetchGEETileUrl(expression, lt.vis);
+      const tileUrl  = await fetchGEETileUrl(
+        buildExpression(lt.assetFn(countryObj.slug, yearVal), countryObj.gaul, lt.isBinary, lt.isSelfMask),
+        lt.vis,
+      );
       const sourceId = `gee-${typeId}`;
       const layerId  = `gee-layer-${typeId}`;
 
@@ -527,7 +562,7 @@ export default function App() {
         setProjectError('Project ID rejected — check your project ID correctly before sign in.');
         friendly = 'Check the Project ID above.';
       } else if (msg.includes('not found') || msg.includes('does not exist')) {
-        friendly = isAll ? 'One or more country assets not found.' : `${countryObj.label} is not included in the analysis.`;
+        friendly = `${countryObj.label} is not included in the analysis.`;
       } else {
         friendly = err.message;
       }
@@ -541,8 +576,15 @@ export default function App() {
   const removeLayerFromMap = useCallback((typeId) => {
     const map = mapRef.current;
     if (!map) return;
+    // Remove single-country layer
     if (map.getLayer(`gee-layer-${typeId}`)) map.removeLayer(`gee-layer-${typeId}`);
     if (map.getSource(`gee-${typeId}`))      map.removeSource(`gee-${typeId}`);
+    // Remove per-country sub-layers (All countries mode)
+    const slugs = (layersRef.current[typeId]?.allLayers ?? []).map(l => l.slug);
+    slugs.forEach(slug => {
+      if (map.getLayer(`gee-layer-${typeId}-${slug}`)) map.removeLayer(`gee-layer-${typeId}-${slug}`);
+      if (map.getSource(`gee-${typeId}-${slug}`))      map.removeSource(`gee-${typeId}-${slug}`);
+    });
   }, []);
 
   // ── Toggle checkbox ───────────────────────────────────────────────────────
@@ -561,9 +603,14 @@ export default function App() {
 
   // ── Opacity change ────────────────────────────────────────────────────────
   const handleOpacity = useCallback((typeId, value) => {
-    const map     = mapRef.current;
+    const map = mapRef.current;
     const layerId = `gee-layer-${typeId}`;
     if (map?.getLayer(layerId)) map.setPaintProperty(layerId, 'raster-opacity', value);
+    // Also update per-country sub-layers (All countries mode)
+    (layersRef.current[typeId]?.allLayers ?? []).forEach(({ slug }) => {
+      const id = `gee-layer-${typeId}-${slug}`;
+      if (map?.getLayer(id)) map.setPaintProperty(id, 'raster-opacity', value);
+    });
     const next = { ...layersRef.current[typeId], opacity: value };
     layersRef.current = { ...layersRef.current, [typeId]: next };
     setLayers(prev => ({ ...prev, [typeId]: next }));
