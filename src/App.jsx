@@ -182,24 +182,15 @@ function buildBoundaryExpression(collectionExpr, lineWidth = 2) {
   };
 }
 
-function buildExpression(assetPath, gaulName, isBinary, isSelfMask) {
-  const loadExpr = {
-    functionInvocationValue: {
-      functionName: 'Image.load',
-      arguments: { id: { constantValue: assetPath } },
-    },
-  };
-
+function applyMaskToExpr(loadExpr, isBinary, isSelfMask) {
   const selfMaskExpr = (inner) => ({
     functionInvocationValue: {
       functionName: 'Image.selfMask',
       arguments: { image: inner },
     },
   });
-
-  let imgExpr;
   if (isBinary) {
-    imgExpr = selfMaskExpr({
+    return selfMaskExpr({
       functionInvocationValue: {
         functionName: 'Image.gte',
         arguments: {
@@ -213,11 +204,19 @@ function buildExpression(assetPath, gaulName, isBinary, isSelfMask) {
         },
       },
     });
-  } else if (isSelfMask) {
-    imgExpr = selfMaskExpr(loadExpr);
-  } else {
-    imgExpr = loadExpr;
   }
+  if (isSelfMask) return selfMaskExpr(loadExpr);
+  return loadExpr;
+}
+
+function buildExpression(assetPath, gaulName, isBinary, isSelfMask) {
+  const loadExpr = {
+    functionInvocationValue: {
+      functionName: 'Image.load',
+      arguments: { id: { constantValue: assetPath } },
+    },
+  };
+  const imgExpr = applyMaskToExpr(loadExpr, isBinary, isSelfMask);
 
   return {
     result: '0',
@@ -234,6 +233,42 @@ function buildExpression(assetPath, gaulName, isBinary, isSelfMask) {
     },
   };
 }
+
+function buildMosaicExpression(lt, yearVal, isBinary, isSelfMask) {
+  const supported = COUNTRIES.filter(c => c.years.length > 0);
+  const images = supported.map(co => {
+    const loadExpr = {
+      functionInvocationValue: {
+        functionName: 'Image.load',
+        arguments: { id: { constantValue: lt.assetFn(co.slug, yearVal) } },
+      },
+    };
+    return applyMaskToExpr(loadExpr, isBinary, isSelfMask);
+  });
+  return {
+    result: '0',
+    values: {
+      '0': {
+        functionInvocationValue: {
+          functionName: 'ImageCollection.mosaic',
+          arguments: {
+            collection: {
+              functionInvocationValue: {
+                functionName: 'ImageCollection.fromImages',
+                arguments: { images: { arrayValue: { values: images } } },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+const ALL_LABEL = 'All countries';
+const SEA_CENTER = [110, 5];
+const SEA_ZOOM   = 4;
+const SEA_BBOX   = [92.0, -11.0, 142.0, 29.0];
 
 // ── Initial layer state ──────────────────────────────────────────────────────
 function initLayers() {
@@ -459,14 +494,17 @@ export default function App() {
     if (!map || !tokenRef.current || !projectRef.current) return;
 
     const lt         = LAYER_TYPES.find(l => l.id === typeId);
-    const countryObj = COUNTRIES.find(c => c.label === countryVal);
-    if (!lt || !countryObj) return;
+    const isAll      = countryVal === ALL_LABEL;
+    const countryObj = isAll ? null : COUNTRIES.find(c => c.label === countryVal);
+    if (!lt || (!isAll && !countryObj)) return;
 
-    const assetPath = lt.assetFn(countryObj.slug, yearVal);
     setLayers(prev => ({ ...prev, [typeId]: { ...prev[typeId], loading: true, error: null } }));
 
     try {
-      const tileUrl  = await fetchGEETileUrl(buildExpression(assetPath, countryObj.gaul, lt.isBinary, lt.isSelfMask), lt.vis);
+      const expression = isAll
+        ? buildMosaicExpression(lt, yearVal, lt.isBinary, lt.isSelfMask)
+        : buildExpression(lt.assetFn(countryObj.slug, yearVal), countryObj.gaul, lt.isBinary, lt.isSelfMask);
+      const tileUrl  = await fetchGEETileUrl(expression, lt.vis);
       const sourceId = `gee-${typeId}`;
       const layerId  = `gee-layer-${typeId}`;
 
@@ -489,7 +527,7 @@ export default function App() {
         setProjectError('Project ID rejected — check your project ID correctly before sign in.');
         friendly = 'Check the Project ID above.';
       } else if (msg.includes('not found') || msg.includes('does not exist')) {
-        friendly = `${countryObj.label} is not included in the analysis.`;
+        friendly = isAll ? 'One or more country assets not found.' : `${countryObj.label} is not included in the analysis.`;
       } else {
         friendly = err.message;
       }
@@ -555,20 +593,26 @@ export default function App() {
     const val = e.target.value;
     setCountry(val);
     countryRef.current = val;
-    const co = COUNTRIES.find(c => c.label === val);
-    if (co && mapRef.current) mapRef.current.flyTo({ center: co.center, zoom: co.zoom, duration: 1200 });
-    // Remove old country boundary immediately so stale boundary is not shown
     const map = mapRef.current;
+    // Remove old country boundary immediately
     if (map) {
       if (map.getLayer('boundary-layer-country')) map.removeLayer('boundary-layer-country');
       if (map.getSource('boundary-country'))      map.removeSource('boundary-country');
       boundaryTilesRef.current.country = null;
     }
-    if (co && co.years.length > 0 && tokenRef.current) loadCountryBoundary(co.gaul);
-    // Auto-select the first available year for this country if current year is unavailable
-    const nextYear = co?.years.includes(year) ? year : (co?.years[0] ?? year);
-    if (nextYear !== year) setYear(nextYear);
-    refreshActive(val, nextYear);
+    if (val === ALL_LABEL) {
+      if (map) map.flyTo({ center: SEA_CENTER, zoom: SEA_ZOOM, duration: 1200 });
+      const nextYear = YEARS.includes(year) ? year : YEARS[0];
+      if (nextYear !== year) setYear(nextYear);
+      refreshActive(val, nextYear);
+    } else {
+      const co = COUNTRIES.find(c => c.label === val);
+      if (co && map) map.flyTo({ center: co.center, zoom: co.zoom, duration: 1200 });
+      if (co && co.years.length > 0 && tokenRef.current) loadCountryBoundary(co.gaul);
+      const nextYear = co?.years.includes(year) ? year : (co?.years[0] ?? year);
+      if (nextYear !== year) setYear(nextYear);
+      refreshActive(val, nextYear);
+    }
     // Refresh tile grid to show new country's cells
     if (tileSelectRef.current) setTimeout(() => updateTileGridRef.current?.(), 0);
   }, [year, refreshActive, loadCountryBoundary]);
@@ -596,10 +640,13 @@ export default function App() {
   const updateTileGrid = useCallback(() => {
     const map = mapRef.current;
     if (!map?.getSource('tile-select-src')) return;
-    const co     = COUNTRIES.find(c => c.label === countryRef.current);
-    const expandedBbox = co
-      ? [co.bbox[0] - 1.0, co.bbox[1] - 1.0, co.bbox[2] + 1.0, co.bbox[3] + 1.0]
-      : null;
+    const isAll = countryRef.current === ALL_LABEL;
+    const co     = isAll ? null : COUNTRIES.find(c => c.label === countryRef.current);
+    const expandedBbox = isAll
+      ? SEA_BBOX
+      : co
+        ? [co.bbox[0] - 1.0, co.bbox[1] - 1.0, co.bbox[2] + 1.0, co.bbox[3] + 1.0]
+        : null;
     const cells  = expandedBbox ? generateCellsForBbox(expandedBbox) : [];
     const selIds = new Set(selectedTilesRef.current.keys());
     const features = cells.map(cell => ({
@@ -777,6 +824,7 @@ export default function App() {
           <div className="section">
             <div className="section-label">Country</div>
             <select className="select" value={country} onChange={handleCountry}>
+              <option value={ALL_LABEL}>{ALL_LABEL}</option>
               {COUNTRIES.map(c => (
                 <option key={c.iso} value={c.label} disabled={c.years.length === 0}
                   style={{ color: c.years.length === 0 ? '#555577' : undefined }}>
@@ -791,7 +839,9 @@ export default function App() {
             <div className="section-label">Year</div>
             <select className="select" value={year} onChange={handleYear}>
               {YEARS.map(y => {
-                const available = COUNTRIES.find(c => c.label === country)?.years.includes(y) ?? false;
+                const available = country === ALL_LABEL
+                  ? true
+                  : COUNTRIES.find(c => c.label === country)?.years.includes(y) ?? false;
                 return (
                   <option key={y} value={y} disabled={!available}
                     style={{ color: available ? undefined : '#555577' }}>
