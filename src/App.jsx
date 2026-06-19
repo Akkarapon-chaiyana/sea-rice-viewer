@@ -193,8 +193,13 @@ function applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask) {
     functionInvocationValue: {
       functionName: 'Image.unmask',
       arguments: {
-        image:        inner,
-        value:        { constantValue: 0 },
+        image: inner,
+        value: {
+          functionInvocationValue: {
+            functionName: 'Image.constant',
+            arguments: { value: { constantValue: 0 } },
+          },
+        },
         sameFootprint: { constantValue: false },
       },
     },
@@ -520,29 +525,46 @@ export default function App() {
     setLayers(prev => ({ ...prev, [typeId]: { ...prev[typeId], loading: true, error: null } }));
 
     if (isAll) {
-      // Fire one request per country in parallel; skip missing assets silently.
-      const supported = COUNTRIES.filter(c => c.years.length > 0);
-      const results = await Promise.all(supported.map(async co => {
-        try {
-          const expr = buildExpression(lt.assetFn(co.slug, yearVal), co.gaul, lt.isBinary, lt.isSelfMask, lt.unmask);
-          const tileUrl = await fetchGEETileUrl(expr, lt.vis);
-          return { slug: co.slug, tileUrl };
-        } catch {
-          return null;
+      try {
+        const supported = COUNTRIES.filter(c => c.years.length > 0);
+        const results = await Promise.all(supported.map(async co => {
+          try {
+            const expr = buildExpression(lt.assetFn(co.slug, yearVal), co.gaul, lt.isBinary, lt.isSelfMask, lt.unmask);
+            const tileUrl = await fetchGEETileUrl(expr, lt.vis);
+            return { slug: co.slug, tileUrl };
+          } catch (err) {
+            const msg = err.message?.toLowerCase() ?? '';
+            // Only skip missing assets — re-throw auth/project/expression errors
+            if (msg.includes('not found') || msg.includes('does not exist') || msg.includes('asset')) return null;
+            throw err;
+          }
+        }));
+        const loaded = results.filter(Boolean);
+        const opacity = layersRef.current[typeId].opacity;
+        loaded.forEach(({ slug, tileUrl }) => {
+          addRasterLayer(map, `gee-${typeId}-${slug}`, `gee-layer-${typeId}-${slug}`, tileUrl, opacity);
+        });
+        ['boundary-layer-sea', 'boundary-layer-country'].forEach(id => {
+          if (map.getLayer(id)) map.moveLayer(id);
+        });
+        const next = { enabled: true, opacity, loading: false, error: null, mapName: null, tileUrl: null,
+          allLayers: loaded };
+        layersRef.current = { ...layersRef.current, [typeId]: next };
+        setLayers(prev => ({ ...prev, [typeId]: next }));
+      } catch (err) {
+        const msg = err.message?.toLowerCase() ?? '';
+        let friendly;
+        if (msg.includes('permission') || msg.includes('serviceusage') || msg.includes('caller does not have')
+            || (msg.includes('project') && msg.includes('not found'))) {
+          setProjectError('Project ID rejected — check your project ID correctly before sign in.');
+          friendly = 'Check the Project ID above.';
+        } else {
+          friendly = err.message;
         }
-      }));
-      const loaded = results.filter(Boolean);
-      const opacity = layersRef.current[typeId].opacity;
-      loaded.forEach(({ slug, tileUrl }) => {
-        addRasterLayer(map, `gee-${typeId}-${slug}`, `gee-layer-${typeId}-${slug}`, tileUrl, opacity);
-      });
-      ['boundary-layer-sea', 'boundary-layer-country'].forEach(id => {
-        if (map.getLayer(id)) map.moveLayer(id);
-      });
-      const next = { enabled: true, opacity, loading: false, error: null, mapName: null, tileUrl: null,
-        allLayers: loaded };
-      layersRef.current = { ...layersRef.current, [typeId]: next };
-      setLayers(prev => ({ ...prev, [typeId]: next }));
+        const next = { ...layersRef.current[typeId], loading: false, error: friendly };
+        layersRef.current = { ...layersRef.current, [typeId]: next };
+        setLayers(prev => ({ ...prev, [typeId]: next }));
+      }
       return;
     }
 
