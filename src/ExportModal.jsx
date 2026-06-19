@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 const LAYER_OPTIONS = [
   { id: 'Mean',   label: '5-Fold Mean Probability', color: '#e06c75', suffix: 'SEA_Avg',  extra: '' },
   { id: 'Std',    label: 'Standard Deviation',       color: '#e5c07b', suffix: 'SEA_Std',  extra: '' },
-  { id: 'Binary', label: 'Binary (prob ≥ 50%)',       color: '#61afef', suffix: 'SEA_Avg',  outSuffix: 'SEA_Binary', extra: 'binary', clearNodata: true },
+  { id: 'Binary', label: 'Binary',                     color: '#61afef', suffix: 'SEA_binary', outSuffix: 'SEA_binary', extra: 'binary', clearNodata: true },
   { id: 'Pseudo', label: 'Pseudo-Labeling',           color: '#98c379', suffix: 'SEA_Pseu', extra: '',                                clearNodata: true },
 ];
 
@@ -35,19 +35,10 @@ function scriptHeader(mode, country, year, scale, projectId) {
 }
 
 function layerImg(l, slug) {
-  // Timor-Leste binary layer is a pre-computed asset (SEA_binary_timor_YEAR),
-  // not derived from SEA_Avg — load it directly, no .gte(50) needed.
-  if (l.extra === 'binary' && slug === 'timor') {
-    return `asset = f'{ASSET_PREFIX}/SEA_binary_${slug}_{YEAR}'\n` +
-           `img   = ee.Image(asset)`;
-  }
   const assetLine = `asset = f'{ASSET_PREFIX}/${l.suffix}_${slug}_{YEAR}'`;
   if (l.extra === 'binary') {
-    // gte(50) gives 1 (rice) or 0 (not rice), masked where the asset has no data.
-    // unmask(0, False) fills ALL masked pixels with 0 globally (sameFootprint=False),
-    // so the output is fully unmasked: 1 = rice, 0 = non-rice or no-data coverage.
     return assetLine + '\n' +
-      `img   = ee.Image(asset).gte(50).unmask(0, False)`;
+      `img   = ee.Image(asset).selfMask()`;
   }
   return assetLine + '\n' + `img   = ee.Image(asset)`;
 }
