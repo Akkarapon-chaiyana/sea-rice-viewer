@@ -46,7 +46,7 @@ const LAYER_TYPES = [
     id: 'Binary', label: 'Binary (prob ≥ 50%)', color: '#61afef',
     vis: { ranges: [{ min: 0, max: 1 }], paletteColors: ['000000','00ff00'] },
     assetFn: (slug, year) => `${ASSET_PREFIX}SEA_binary_${slug}_${year}`,
-    isBinary: false,
+    isBinary: false, isSelfMask: true,
     legendType: 'swatch',
     legendSwatches: [
       { color: '#000000', label: 'Masked / Non-rice' },
@@ -182,7 +182,7 @@ function buildBoundaryExpression(collectionExpr, lineWidth = 2) {
   };
 }
 
-function buildExpression(assetPath, gaulName, isBinary) {
+function buildExpression(assetPath, gaulName, isBinary, isSelfMask) {
   const loadExpr = {
     functionInvocationValue: {
       functionName: 'Image.load',
@@ -190,29 +190,34 @@ function buildExpression(assetPath, gaulName, isBinary) {
     },
   };
 
-  const imgExpr = isBinary
-    ? {
-        functionInvocationValue: {
-          functionName: 'Image.selfMask',
-          arguments: {
-            image: {
-              functionInvocationValue: {
-                functionName: 'Image.gte',
-                arguments: {
-                  image1: loadExpr,
-                  image2: {
-                    functionInvocationValue: {
-                      functionName: 'Image.constant',
-                      arguments: { value: { constantValue: 50 } },
-                    },
-                  },
-                },
-              },
+  const selfMaskExpr = (inner) => ({
+    functionInvocationValue: {
+      functionName: 'Image.selfMask',
+      arguments: { image: inner },
+    },
+  });
+
+  let imgExpr;
+  if (isBinary) {
+    imgExpr = selfMaskExpr({
+      functionInvocationValue: {
+        functionName: 'Image.gte',
+        arguments: {
+          image1: loadExpr,
+          image2: {
+            functionInvocationValue: {
+              functionName: 'Image.constant',
+              arguments: { value: { constantValue: 50 } },
             },
           },
         },
-      }
-    : loadExpr;
+      },
+    });
+  } else if (isSelfMask) {
+    imgExpr = selfMaskExpr(loadExpr);
+  } else {
+    imgExpr = loadExpr;
+  }
 
   return {
     result: '0',
@@ -461,7 +466,7 @@ export default function App() {
     setLayers(prev => ({ ...prev, [typeId]: { ...prev[typeId], loading: true, error: null } }));
 
     try {
-      const tileUrl  = await fetchGEETileUrl(buildExpression(assetPath, countryObj.gaul, lt.isBinary), lt.vis);
+      const tileUrl  = await fetchGEETileUrl(buildExpression(assetPath, countryObj.gaul, lt.isBinary, lt.isSelfMask), lt.vis);
       const sourceId = `gee-${typeId}`;
       const layerId  = `gee-layer-${typeId}`;
 
