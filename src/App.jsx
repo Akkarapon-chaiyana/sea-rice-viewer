@@ -34,14 +34,7 @@ const LAYER_TYPES = [
     legendType: 'gradient', legendLabel: 'Probability (%)', legendMin: 0, legendMax: 100,
     legendPalette: ['#ffffff','#ffff00','#ffa500','#ff0000','#800080'],
   },
-  {
-    id: 'Std', label: 'Standard Deviation', color: '#e5c07b',
-    vis: { ranges: [{ min: 0, max: 45 }], paletteColors: ['ffffff','ffff00','ffa500','ff0000','800080'] },
-    assetFn: (slug, year) => `${ASSET_PREFIX}SEA_Std_${slug}_${year}`,
-    isBinary: false, unmask: true,
-    legendType: 'gradient', legendLabel: 'Std Dev', legendMin: 0, legendMax: 45,
-    legendPalette: ['#ffffff','#ffff00','#ffa500','#ff0000','#800080'],
-  },
+  // { id: 'Std', label: 'Standard Deviation', ... },  // disabled
   {
     id: 'Binary', label: 'Binary', color: '#61afef',
     vis: { ranges: [{ min: 0, max: 1 }], paletteColors: ['000000','00ff00'] },
@@ -53,18 +46,7 @@ const LAYER_TYPES = [
       { color: '#00ff00', label: 'Rice (prob ≥ 50%)' },
     ],
   },
-  {
-    id: 'Pseudo', label: 'Pseudo-Labeling', color: '#98c379',
-    vis: { ranges: [{ min: 0, max: 2 }], paletteColors: ['000000','008000','ff0000'] },
-    assetFn: (slug, year) => `${ASSET_PREFIX}SEA_Pseu_${slug}_${year}`,
-    isBinary: false,
-    legendType: 'swatch',
-    legendSwatches: [
-      { color: '#000000', label: '0 — Non-rice' },
-      { color: '#008000', label: '1 — Rice' },
-      { color: '#ff0000', label: '255 — Masked' },
-    ],
-  },
+  // { id: 'Pseudo', label: 'Pseudo-Labeling', ... },  // disabled
 ];
 
 const BASEMAPS = [
