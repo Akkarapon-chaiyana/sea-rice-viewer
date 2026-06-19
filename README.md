@@ -78,8 +78,8 @@ Once the project is ready, paste the **Project ID** into the app's Authenticatio
 
 1. Enter your **GCP Project ID** in the Authentication panel.
 2. Click **Sign In with Google** — authorise with the account that has GEE access.
-3. Select a **Country** and **Year** (currently 2021 for all countries except Singapore).
-4. Toggle **Map Layers** to visualise rice probability on the map.
+3. Select a **Country** (including **All countries**) and **Year**.
+4. Toggle **Map Layers** to visualise rice probability on the map (5-Fold Ensemble Probability and Binary are currently available).
 5. Use the **Export** button to generate a ready-to-run Python download script.
 
 ---
@@ -90,7 +90,7 @@ The **Export GeoTIFF (Python)** panel generates a script through a sequential wi
 
 | Step | Description |
 |---|---|
-| **1 — Layers to export** | Select one or more output layers |
+| **1 — Layers to export** | Select one or more output layers (5-Fold Mean Probability, Binary) |
 | **2 — Resolution** | Choose pixel size: 10 / 30 / 100 / 250 / 1000 m |
 | **3 — Export area** | Whole country or custom grid tiles |
 | **4 — Export destination** | Google Drive or Local Download |
@@ -207,9 +207,9 @@ Files appear in your Google Drive folder once each task completes.
 | Layer | Filename prefix | Values | Notes |
 |---|---|---|---|
 | 5-Fold Mean Probability | `SEA_Avg_` | 0 – 100 | Rice probability (%) |
-| Standard Deviation | `SEA_Std_` | 0 – 45 | Uncertainty across 5 folds |
-| Binary | `SEA_Binary_` | 0 or 1 | 1 = rice (prob ≥ 50%), 0 = non-rice |
-| Pseudo-Labeling | `SEA_Pseu_` | 0, 1, 255 | 0 = background, 1 = rice, 255 = masked |
+| Binary | `SEA_binary_` | 0 or 1 | 1 = rice (prob ≥ 50%), 0 = non-rice |
+
+> **Note:** Standard Deviation (`SEA_Std_`) and Pseudo-Labeling (`SEA_Pseu_`) layers are temporarily disabled in the current release.
 
 All outputs use **EPSG:4326** (WGS 84) and the resolution selected in the export panel (10 / 30 / 100 / 250 / 1000 m).
 
