@@ -30,7 +30,7 @@ const LAYER_TYPES = [
     id: 'Mean', label: '5-Fold Ensemble Probability', color: '#e06c75',
     vis: { ranges: [{ min: 0, max: 100 }], paletteColors: ['ffffff','ffff00','ffa500','ff0000','800080'] },
     assetFn: (slug, year) => `${ASSET_PREFIX}SEA_Avg_${slug}_${year}`,
-    isBinary: false, unmask: true,
+    isBinary: false,
     legendType: 'gradient', legendLabel: 'Probability (%)', legendMin: 0, legendMax: 100,
     legendPalette: ['#ffffff','#ffff00','#ffa500','#ff0000','#800080'],
   },
@@ -38,7 +38,7 @@ const LAYER_TYPES = [
     id: 'Std', label: 'Standard Deviation', color: '#e5c07b',
     vis: { ranges: [{ min: 0, max: 45 }], paletteColors: ['ffffff','ffff00','ffa500','ff0000','800080'] },
     assetFn: (slug, year) => `${ASSET_PREFIX}SEA_Std_${slug}_${year}`,
-    isBinary: false, unmask: true,
+    isBinary: false,
     legendType: 'gradient', legendLabel: 'Std Dev', legendMin: 0, legendMax: 45,
     legendPalette: ['#ffffff','#ffff00','#ffa500','#ff0000','#800080'],
   },
@@ -182,25 +182,11 @@ function buildBoundaryExpression(collectionExpr, lineWidth = 2) {
   };
 }
 
-function applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask) {
+function applyMaskToExpr(loadExpr, isBinary, isSelfMask) {
   const selfMaskExpr = (inner) => ({
     functionInvocationValue: {
       functionName: 'Image.selfMask',
       arguments: { image: inner },
-    },
-  });
-  const unmaskExpr = (inner) => ({
-    functionInvocationValue: {
-      functionName: 'Image.unmask',
-      arguments: {
-        image: inner,
-        value: {
-          functionInvocationValue: {
-            functionName: 'Image.constant',
-            arguments: { value: { constantValue: 0 } },
-          },
-        },
-      },
     },
   });
   if (isBinary) {
@@ -220,18 +206,17 @@ function applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask) {
     });
   }
   if (isSelfMask) return selfMaskExpr(loadExpr);
-  if (unmask)    return unmaskExpr(loadExpr);
   return loadExpr;
 }
 
-function buildExpression(assetPath, gaulName, isBinary, isSelfMask, unmask) {
+function buildExpression(assetPath, gaulName, isBinary, isSelfMask) {
   const loadExpr = {
     functionInvocationValue: {
       functionName: 'Image.load',
       arguments: { id: { constantValue: assetPath } },
     },
   };
-  const imgExpr = applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask);
+  const imgExpr = applyMaskToExpr(loadExpr, isBinary, isSelfMask);
 
   return {
     result: '0',
@@ -249,7 +234,7 @@ function buildExpression(assetPath, gaulName, isBinary, isSelfMask, unmask) {
   };
 }
 
-function buildMosaicExpression(lt, yearVal, isBinary, isSelfMask, unmask) {
+function buildMosaicExpression(lt, yearVal, isBinary, isSelfMask) {
   const supported = COUNTRIES.filter(c => c.years.length > 0);
   const images = supported.map(co => {
     const loadExpr = {
@@ -258,7 +243,7 @@ function buildMosaicExpression(lt, yearVal, isBinary, isSelfMask, unmask) {
         arguments: { id: { constantValue: lt.assetFn(co.slug, yearVal) } },
       },
     };
-    return applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask);
+    return applyMaskToExpr(loadExpr, isBinary, isSelfMask);
   });
   return {
     result: '0',
@@ -528,7 +513,7 @@ export default function App() {
         const supported = COUNTRIES.filter(c => c.years.length > 0);
         const results = await Promise.all(supported.map(async co => {
           try {
-            const expr = buildExpression(lt.assetFn(co.slug, yearVal), co.gaul, lt.isBinary, lt.isSelfMask, lt.unmask);
+            const expr = buildExpression(lt.assetFn(co.slug, yearVal), co.gaul, lt.isBinary, lt.isSelfMask);
             const tileUrl = await fetchGEETileUrl(expr, lt.vis);
             return { slug: co.slug, tileUrl };
           } catch (err) {
