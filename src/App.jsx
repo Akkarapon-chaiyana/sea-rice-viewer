@@ -189,16 +189,6 @@ function applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask) {
       arguments: { image: inner },
     },
   });
-  const unmaskExpr = (inner) => ({
-    functionInvocationValue: {
-      functionName: 'Image.unmask',
-      arguments: {
-        input:        inner,
-        value:        { functionInvocationValue: { functionName: 'Image.constant', arguments: { value: { constantValue: 0 } } } },
-        sameFootprint: { constantValue: true },
-      },
-    },
-  });
   if (isBinary) {
     return selfMaskExpr({
       functionInvocationValue: {
@@ -216,7 +206,6 @@ function applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask) {
     });
   }
   if (isSelfMask) return selfMaskExpr(loadExpr);
-  if (unmask)    return unmaskExpr(loadExpr);
   return loadExpr;
 }
 
@@ -227,22 +216,45 @@ function buildExpression(assetPath, gaulName, isBinary, isSelfMask, unmask) {
       arguments: { id: { constantValue: assetPath } },
     },
   };
-  const imgExpr = applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask);
+  const imgExpr  = applyMaskToExpr(loadExpr, isBinary, isSelfMask);
+  const countryGeom = buildCountryFilter(gaulName);
 
-  return {
-    result: '0',
-    values: {
-      '0': {
-        functionInvocationValue: {
-          functionName: 'Image.clip',
-          arguments: {
-            input:    imgExpr,
-            geometry: buildCountryFilter(gaulName),
+  const clippedData = {
+    functionInvocationValue: {
+      functionName: 'Image.clip',
+      arguments: { input: imgExpr, geometry: countryGeom },
+    },
+  };
+
+  if (unmask) {
+    // Blend clipped constant(0) as background so missing tiles fill white
+    // without global tile-grid seam artifacts from sameFootprint:false.
+    const zero = {
+      functionInvocationValue: {
+        functionName: 'Image.constant',
+        arguments: { value: { constantValue: 0 } },
+      },
+    };
+    const clippedZero = {
+      functionInvocationValue: {
+        functionName: 'Image.clip',
+        arguments: { input: zero, geometry: countryGeom },
+      },
+    };
+    return {
+      result: '0',
+      values: {
+        '0': {
+          functionInvocationValue: {
+            functionName: 'Image.blend',
+            arguments: { image: clippedZero, top: clippedData },
           },
         },
       },
-    },
-  };
+    };
+  }
+
+  return { result: '0', values: { '0': clippedData } };
 }
 
 function buildMosaicExpression(lt, yearVal, isBinary, isSelfMask, unmask) {
