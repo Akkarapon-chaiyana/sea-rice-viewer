@@ -247,7 +247,7 @@ function buildExpression(assetPath, gaulName, isBinary, isSelfMask, unmask) {
         '0': {
           functionInvocationValue: {
             functionName: 'Image.blend',
-            arguments: { image: clippedZero, top: clippedData },
+            arguments: { bottom: clippedZero, top: clippedData },
           },
         },
       },
