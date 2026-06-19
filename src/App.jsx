@@ -193,14 +193,13 @@ function applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask) {
     functionInvocationValue: {
       functionName: 'Image.unmask',
       arguments: {
-        input: inner,
+        image: inner,
         value: {
           functionInvocationValue: {
             functionName: 'Image.constant',
             arguments: { value: { constantValue: 0 } },
           },
         },
-        sameFootprint: { constantValue: false },
       },
     },
   });
