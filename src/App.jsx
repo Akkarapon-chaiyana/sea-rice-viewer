@@ -458,7 +458,7 @@ export default function App() {
         map.addLayer({ id: 'tile-select-fill', type: 'fill', source: 'tile-select-src',
           paint: { 'fill-color': '#ff8c00', 'fill-opacity': ['case', ['get', 'selected'], 0.50, 0] } });
         map.addLayer({ id: 'tile-select-line', type: 'line', source: 'tile-select-src',
-          paint: { 'line-color': '#000000', 'line-width': 0.7, 'line-opacity': 0.55 } });
+          paint: { 'line-color': '#ffffff', 'line-width': 0.6, 'line-opacity': 0.30 } });
         setTimeout(() => { if (updateTileGridRef.current) updateTileGridRef.current(); }, 50);
       }
     });
@@ -782,7 +782,7 @@ export default function App() {
             'fill-opacity': ['case', ['get', 'selected'], 0.50, 0],
           } });
         map.addLayer({ id: 'tile-select-line', type: 'line', source: 'tile-select-src',
-          paint: { 'line-color': '#000000', 'line-width': 0.7, 'line-opacity': 0.55 } });
+          paint: { 'line-color': '#ffffff', 'line-width': 0.6, 'line-opacity': 0.30 } });
       }
 
       // Click a cell → toggle selection
