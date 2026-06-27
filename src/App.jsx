@@ -279,7 +279,7 @@ function buildMosaicExpression(lt, yearVal, isBinary, isSelfMask, unmask) {
 
 const ALL_LABEL = 'All countries';
 const SEA_CENTER = [110, 5];
-const SEA_ZOOM   = 4;
+const SEA_ZOOM   = 3.5;
 const SEA_BBOX   = [92.0, -11.0, 142.0, 29.0];
 
 // ── Initial layer state ──────────────────────────────────────────────────────
