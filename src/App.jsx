@@ -299,14 +299,14 @@ export default function App() {
   const projectRef = useRef('');
   const layersRef  = useRef(initLayers());
   const seaOnRef   = useRef(false);
-  const countryRef = useRef('Thailand');
+  const countryRef = useRef(ALL_LABEL);
   // Store boundary tile URLs so they can be restored after basemap switch
   const boundaryTilesRef  = useRef({ country: null, sea: null });
   // Request counter — ensures only the latest country boundary request is applied
   const boundaryReqRef    = useRef(0);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [country,     setCountry]     = useState('Thailand');
+  const [country,     setCountry]     = useState(ALL_LABEL);
   const [year,        setYear]        = useState('2021');
   const [basemap,     setBasemap]     = useState('satellite');
   const [projectId,   setProjectId]   = useState('');
@@ -456,7 +456,7 @@ export default function App() {
       if (tileSelectRef.current) {
         map.addSource('tile-select-src', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({ id: 'tile-select-fill', type: 'fill', source: 'tile-select-src',
-          paint: { 'fill-color': '#ff8c00', 'fill-opacity': ['case', ['get', 'selected'], 0.50, 0] } });
+          paint: { 'fill-color': '#ff8c00', 'fill-opacity': ['case', ['get', 'selected'], 0.80, 0] } });
         map.addLayer({ id: 'tile-select-line', type: 'line', source: 'tile-select-src',
           paint: { 'line-color': '#ffffff', 'line-width': 0.6, 'line-opacity': 0.30 } });
         setTimeout(() => { if (updateTileGridRef.current) updateTileGridRef.current(); }, 50);
@@ -498,15 +498,25 @@ export default function App() {
           }
           setProjectError(null);
           setTokenStatus('ok');
-          const co = COUNTRIES.find(c => c.label === countryRef.current);
-          if (co) loadCountryBoundary(co.gaul);
+          if (countryRef.current === ALL_LABEL) {
+            const map = mapRef.current;
+            if (map) map.flyTo({ center: SEA_CENTER, zoom: SEA_ZOOM, duration: 1200 });
+            if (!seaOnRef.current) {
+              setSeaOn(true);
+              seaOnRef.current = true;
+              loadSEABoundary();
+            }
+          } else {
+            const co = COUNTRIES.find(c => c.label === countryRef.current);
+            if (co) loadCountryBoundary(co.gaul);
+          }
         } else {
           setTokenStatus('error');
         }
       },
     });
     client.requestAccessToken({ prompt: '' });
-  }, [loadCountryBoundary]);
+  }, [loadCountryBoundary, loadSEABoundary]);
 
   // ── Load a single GEE layer ───────────────────────────────────────────────
   const loadLayer = useCallback(async (typeId, countryVal, yearVal) => {
@@ -779,7 +789,7 @@ export default function App() {
         map.addLayer({ id: 'tile-select-fill', type: 'fill', source: 'tile-select-src',
           paint: {
             'fill-color':   '#ff8c00',
-            'fill-opacity': ['case', ['get', 'selected'], 0.50, 0],
+            'fill-opacity': ['case', ['get', 'selected'], 0.80, 0],
           } });
         map.addLayer({ id: 'tile-select-line', type: 'line', source: 'tile-select-src',
           paint: { 'line-color': '#ffffff', 'line-width': 0.6, 'line-opacity': 0.30 } });
