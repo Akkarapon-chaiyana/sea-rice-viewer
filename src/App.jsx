@@ -34,7 +34,14 @@ const LAYER_TYPES = [
     legendType: 'gradient', legendLabel: 'Probability (%)', legendMin: 0, legendMax: 100,
     legendPalette: ['#ffffff','#ffff00','#ffa500','#ff0000','#800080'],
   },
-  // { id: 'Std', label: 'Standard Deviation', ... },  // disabled
+  {
+    id: 'Std', label: 'Standard Deviation', color: '#e5c07b',
+    vis: { ranges: [{ min: 0, max: 45 }], paletteColors: ['ffffff','ffff00','ffa500','ff0000','800080'] },
+    assetFn: (slug, year) => `${ASSET_PREFIX}SEA_Std_${slug}_${year}`,
+    isBinary: false, unmask: true,
+    legendType: 'gradient', legendLabel: 'Std Dev', legendMin: 0, legendMax: 45,
+    legendPalette: ['#ffffff','#ffff00','#ffa500','#ff0000','#800080'],
+  },
   {
     id: 'Binary', label: 'Binary', color: '#61afef',
     vis: { ranges: [{ min: 0, max: 1 }], paletteColors: ['000000','00ff00'] },
