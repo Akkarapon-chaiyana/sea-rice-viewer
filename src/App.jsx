@@ -1089,8 +1089,12 @@ export default function App() {
           </span>
           <button className="tile-select-bar-btn"
             onClick={() => {
-              const co = COUNTRIES.find(c => c.label === country);
-              const cells = co ? generateCellsForBbox(co.bbox) : [];
+              const isAll = country === ALL_LABEL;
+              const co    = isAll ? null : COUNTRIES.find(c => c.label === country);
+              const bbox  = isAll
+                ? SEA_BBOX
+                : co ? [co.bbox[0] - 1.0, co.bbox[1] - 1.0, co.bbox[2] + 1.0, co.bbox[3] + 1.0] : null;
+              const cells = bbox ? generateCellsForBbox(bbox) : [];
               setSelectedTiles(new Map(cells.map(c => [c.id, c])));
             }}>All ({country})</button>
           <button className="tile-select-bar-btn"

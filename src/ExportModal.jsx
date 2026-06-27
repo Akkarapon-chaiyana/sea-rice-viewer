@@ -3,7 +3,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 // ── Layer / scale options ─────────────────────────────────────────────────────
 const LAYER_OPTIONS = [
   { id: 'Mean',   label: '5-Fold Mean Probability', color: '#e06c75', suffix: 'SEA_Avg',  extra: '' },
-  // { id: 'Std',  label: 'Standard Deviation', ... },  // disabled
+  { id: 'Std',    label: 'Standard Deviation',       color: '#e5c07b', suffix: 'SEA_Std',  extra: '' },
   { id: 'Binary', label: 'Binary',                     color: '#61afef', suffix: 'SEA_binary', outSuffix: 'SEA_binary', extra: 'binary', clearNodata: true },
   // { id: 'Pseudo', label: 'Pseudo-Labeling', ... },  // disabled
 ];
