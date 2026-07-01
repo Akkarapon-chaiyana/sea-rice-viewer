@@ -78,9 +78,26 @@ Once the project is ready, paste the **Project ID** into the app's Authenticatio
 
 1. Enter your **GCP Project ID** in the Authentication panel.
 2. Click **Sign In with Google** — authorise with the account that has GEE access.
-3. Select a **Country** (including **All countries**) and **Year**.
-4. Toggle **Map Layers** to visualise crop probability on the map (5-Fold Ensemble Probability and Binary are currently available).
-5. Use the **Export** button to generate a ready-to-run Python download script.
+3. Tick one or more **Crop Type**s (**Rice** and/or **Corn**) below the Basemap selector.
+4. Select a **Country** (including **All countries**) and **Year**.
+5. Toggle **Map Layers** to visualise crop probability on the map (5-Fold Ensemble Probability and Binary are currently available). Layers are listed per selected crop, so Rice and Corn can be shown at the same time.
+6. Use the **Export** button to generate a ready-to-run Python download script.
+
+---
+
+## Crop types
+
+The viewer supports multiple staple crops. Each crop is a separate GEE asset folder
+that shares the same file structure (`SEA_Avg_<slug>_<year>`, `SEA_binary_<slug>_<year>`).
+
+| Crop | Asset folder | Binary colour |
+|---|---|---|
+| Rice | `projects/tony-1122/assets/NIE/rice/` | Green |
+| Corn | `projects/tony-1122/assets/NIE/corn/` | Yellow |
+
+Tick one or more crops in the **Crop Type** panel. Selecting several shows their
+layers simultaneously; the binary layer is coloured per crop so overlapping crops
+stay distinguishable. Unticking a crop removes its layers from the map.
 
 ---
 
@@ -94,6 +111,10 @@ The **Export GeoTIFF (Python)** panel generates a script through a sequential wi
 | **2 — Resolution** | Choose pixel size: 10 / 30 / 100 / 250 / 1000 m |
 | **3 — Export area** | Whole country or custom grid tiles |
 | **4 — Export destination** | Google Drive or Local Download |
+
+> **Note:** An export script targets a single crop. When only one crop is ticked, that
+> crop is used; when both Rice and Corn are ticked, the script targets Rice — untick Rice
+> to export Corn. The target crop is shown in the export panel's title bar.
 
 Two export modes are available:
 
@@ -206,8 +227,10 @@ Files appear in your Google Drive folder once each task completes.
 
 | Layer | Filename prefix | Values | Notes |
 |---|---|---|---|
-| 5-Fold Mean Probability | `SEA_Avg_` | 0 – 100 | Rice probability (%) |
-| Binary | `SEA_binary_` | 0 or 1 | 1 = rice (prob ≥ 50%), 0 = non-rice |
+| 5-Fold Mean Probability | `SEA_Avg_` | 0 – 100 | Crop probability (%) |
+| Binary | `SEA_binary_` | 0 or 1 | 1 = crop (prob ≥ 50%), 0 = non-crop |
+
+Both layers exist per crop under that crop's asset folder (see [Crop types](#crop-types)). On the map, the binary layer is drawn green for Rice and yellow for Corn.
 
 > **Note:** Standard Deviation (`SEA_Std_`) and Pseudo-Labeling (`SEA_Pseu_`) layers are temporarily disabled in the current release.
 
@@ -230,6 +253,10 @@ All outputs use **EPSG:4326** (WGS 84) and the resolution selected in the export
 | Brunei | `brunei` | 2021 |
 | Timor-Leste | `timor` | 2021 |
 | Singapore | `singapore` | Not included |
+
+> **Note:** The years above reflect the Rice dataset. Coverage may differ per crop —
+> if a country/year has no asset for the selected crop, that layer is skipped
+> ("All countries" mode) or reported as not included (single-country mode).
 
 ---
 

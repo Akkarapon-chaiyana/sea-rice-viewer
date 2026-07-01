@@ -74,9 +74,9 @@ function layerVis(lt, crop) {
 }
 
 // Crop-aware legend swatches for the binary layer.
+// Only the "crop present" class is shown; the masked / non-crop class is omitted.
 function layerLegendSwatches(lt, crop) {
   return [
-    { color: '#000000', label: 'Masked / Non-crop' },
     { color: `#${crop.binaryColor}`, label: `${crop.label} (prob ≥ 50%)` },
   ];
 }
@@ -972,17 +972,26 @@ export default function App() {
             </select>
           </div>
 
-          {/* Crop Type — tick one or more crops; layers below apply per crop */}
+          {/* Crop Type — tick one or more crops; disabled until signed in */}
           <div className="section">
             <div className="section-label">Crop Type</div>
-            {CROPS.map(cr => (
-              <label key={cr.id} className="checkbox-row">
-                <input type="checkbox" checked={activeCrops.includes(cr.id)}
-                  onChange={e => handleCropToggle(cr.id, e.target.checked)} />
-                <span className="layer-dot" style={{ background: `#${cr.binaryColor}` }} />
-                <span className="checkbox-label">{cr.label}</span>
-              </label>
-            ))}
+            {!canLoad && (
+              <div className="auth-status hint" style={{ marginBottom: 6 }}>
+                Sign in to select crop types.
+              </div>
+            )}
+            <div className={canLoad ? '' : 'sidebar-locked'}
+              style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 10 }}>
+              {CROPS.map(cr => (
+                <label key={cr.id} className="checkbox-row">
+                  <input type="checkbox" checked={activeCrops.includes(cr.id)}
+                    disabled={!canLoad}
+                    onChange={e => handleCropToggle(cr.id, e.target.checked)} />
+                  <span className="layer-dot" style={{ background: `#${cr.binaryColor}` }} />
+                  <span className="checkbox-label">{cr.label}</span>
+                </label>
+              ))}
+            </div>
           </div>
 
           {/* ── Sections locked until signed in ─────────────────────────── */}
@@ -1095,37 +1104,43 @@ export default function App() {
           <div className="section">
             <div className="section-label">Legend</div>
             {!anyActive && <div className="auth-status hint">No layers active.</div>}
+
+            {/* Gradient layers share one range across crops — shown once */}
+            {LAYER_TYPES
+              .filter(lt => lt.legendType === 'gradient'
+                && activeCrops.some(cid => layers[lkey(cid, lt.id)].enabled && !layers[lkey(cid, lt.id)].loading))
+              .map(lt => (
+                <div key={lt.id} className="legend-item">
+                  <div className="legend-type-label" style={{ color: lt.color }}>{lt.label}</div>
+                  <div className="legend-gradient">
+                    {lt.legendPalette.map((c, i) => (
+                      <div key={i} className="legend-gradient-seg" style={{ background: c }} />
+                    ))}
+                  </div>
+                  <div className="legend-ticks">
+                    <span>{lt.legendMin}</span>
+                    <span style={{ color: '#aaaacc', fontSize: 9 }}>{lt.legendLabel}</span>
+                    <span>{lt.legendMax}</span>
+                  </div>
+                </div>
+              ))}
+
+            {/* Swatch layers (binary) differ in colour per crop — shown per crop */}
             {CROPS.filter(cr => activeCrops.includes(cr.id)).flatMap(cr =>
               LAYER_TYPES
-                .filter(lt => layers[lkey(cr.id, lt.id)].enabled && !layers[lkey(cr.id, lt.id)].loading)
-                .map(lt => {
-                  const labelColor = lt.id === 'Binary' ? `#${cr.binaryColor}` : lt.color;
-                  return (
-                    <div key={lkey(cr.id, lt.id)} className="legend-item">
-                      <div className="legend-type-label" style={{ color: labelColor }}>{cr.label} · {lt.label}</div>
-                      {lt.legendType === 'gradient' && (
-                        <>
-                          <div className="legend-gradient">
-                            {lt.legendPalette.map((c, i) => (
-                              <div key={i} className="legend-gradient-seg" style={{ background: c }} />
-                            ))}
-                          </div>
-                          <div className="legend-ticks">
-                            <span>{lt.legendMin}</span>
-                            <span style={{ color: '#aaaacc', fontSize: 9 }}>{lt.legendLabel}</span>
-                            <span>{lt.legendMax}</span>
-                          </div>
-                        </>
-                      )}
-                      {lt.legendType === 'swatch' && layerLegendSwatches(lt, cr).map((sw, i) => (
-                        <div key={i} className="legend-swatch-row">
-                          <div className="legend-swatch" style={{ background: sw.color }} />
-                          <span className="legend-swatch-label">{sw.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                }))}
+                .filter(lt => lt.legendType === 'swatch'
+                  && layers[lkey(cr.id, lt.id)].enabled && !layers[lkey(cr.id, lt.id)].loading)
+                .map(lt => (
+                  <div key={lkey(cr.id, lt.id)} className="legend-item">
+                    <div className="legend-type-label" style={{ color: `#${cr.binaryColor}` }}>{cr.label} · {lt.label}</div>
+                    {layerLegendSwatches(lt, cr).map((sw, i) => (
+                      <div key={i} className="legend-swatch-row">
+                        <div className="legend-swatch" style={{ background: sw.color }} />
+                        <span className="legend-swatch-label">{sw.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )))}
           </div>
 
           </div>{/* end sidebar-locked */}
