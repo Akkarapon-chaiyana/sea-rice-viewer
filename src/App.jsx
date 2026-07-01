@@ -5,7 +5,15 @@ import ExportModal from './ExportModal';
 import { cellBbox, generateCellsForBbox, CELL_DEG } from './utils/gridTiles';
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const ASSET_PREFIX = 'projects/tony-1122/assets/NIE/rice/';
+// Crop types share the same asset structure (SEA_Avg_/SEA_binary_<slug>_<year>),
+// differing only by folder prefix and the colour used for the binary layer.
+const CROPS = [
+  { id: 'rice', label: 'Rice', prefix: 'projects/tony-1122/assets/NIE/rice/', binaryColor: '00ff00' },
+  { id: 'corn', label: 'Corn', prefix: 'projects/tony-1122/assets/NIE/corn/', binaryColor: 'ffff00' },
+];
+const CROP_BY_ID = Object.fromEntries(CROPS.map(c => [c.id, c]));
+// Composite key identifying a crop + layer type on the map and in layer state.
+const lkey = (cropId, typeId) => `${cropId}-${typeId}`;
 const GEE_API      = 'https://earthengine.googleapis.com/v1';
 const COUNTRIES = [
   { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                         center: [100.5,  13.5], zoom: 5,  bbox: [ 97.3,  5.5, 105.7, 20.5], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
@@ -25,36 +33,53 @@ const SEA_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
 
 const YEARS = ['2019', '2020', '2021', '2022', '2023', '2024', '2025'];
 
+// `assetName` returns the file name only; the crop's folder prefix is prepended
+// at load time so the same layer type works for any crop.
 const LAYER_TYPES = [
   {
     id: 'Mean', label: '5-Fold Ensemble Probability', color: '#e06c75',
     vis: { ranges: [{ min: 0, max: 100 }], paletteColors: ['ffffff','ffff00','ffa500','ff0000','800080'] },
-    assetFn: (slug, year) => `${ASSET_PREFIX}SEA_Avg_${slug}_${year}`,
+    assetName: (slug, year) => `SEA_Avg_${slug}_${year}`,
     isBinary: false, unmask: true,
     legendType: 'gradient', legendLabel: 'Probability (%)', legendMin: 0, legendMax: 100,
     legendPalette: ['#ffffff','#ffff00','#ffa500','#ff0000','#800080'],
   },
-  {
-    id: 'Std', label: 'Standard Deviation', color: '#e5c07b',
-    vis: { ranges: [{ min: 0, max: 45 }], paletteColors: ['ffffff','ffff00','ffa500','ff0000','800080'] },
-    assetFn: (slug, year) => `${ASSET_PREFIX}SEA_Std_${slug}_${year}`,
-    isBinary: false, unmask: true,
-    legendType: 'gradient', legendLabel: 'Std Dev', legendMin: 0, legendMax: 45,
-    legendPalette: ['#ffffff','#ffff00','#ffa500','#ff0000','#800080'],
-  },
+  // {
+  //   id: 'Std', label: 'Standard Deviation', color: '#e5c07b',
+  //   vis: { ranges: [{ min: 0, max: 45 }], paletteColors: ['ffffff','ffff00','ffa500','ff0000','800080'] },
+  //   assetName: (slug, year) => `SEA_Std_${slug}_${year}`,
+  //   isBinary: false, unmask: true,
+  //   legendType: 'gradient', legendLabel: 'Std Dev', legendMin: 0, legendMax: 45,
+  //   legendPalette: ['#ffffff','#ffff00','#ffa500','#ff0000','#800080'],
+  // },  // disabled
   {
     id: 'Binary', label: 'Binary', color: '#61afef',
-    vis: { ranges: [{ min: 0, max: 1 }], paletteColors: ['000000','00ff00'] },
-    assetFn: (slug, year) => `${ASSET_PREFIX}SEA_binary_${slug}_${year}`,
+    assetName: (slug, year) => `SEA_binary_${slug}_${year}`,
     isBinary: false, isSelfMask: true,
     legendType: 'swatch',
-    legendSwatches: [
-      { color: '#000000', label: 'Masked / Non-rice' },
-      { color: '#00ff00', label: 'Rice (prob ≥ 50%)' },
-    ],
   },
   // { id: 'Pseudo', label: 'Pseudo-Labeling', ... },  // disabled
 ];
+
+// Full asset id for a crop + layer type.
+const assetId = (crop, lt, slug, year) => `${crop.prefix}${lt.assetName(slug, year)}`;
+
+// Crop-aware visualisation — the binary layer is coloured per crop
+// (rice → green, corn → yellow); other layers share one palette.
+function layerVis(lt, crop) {
+  if (lt.id === 'Binary') {
+    return { ranges: [{ min: 0, max: 1 }], paletteColors: ['000000', crop.binaryColor] };
+  }
+  return lt.vis;
+}
+
+// Crop-aware legend swatches for the binary layer.
+function layerLegendSwatches(lt, crop) {
+  return [
+    { color: '#000000', label: 'Masked / Non-crop' },
+    { color: `#${crop.binaryColor}`, label: `${crop.label} (prob ≥ 50%)` },
+  ];
+}
 
 const BASEMAPS = [
   {
@@ -246,13 +271,13 @@ function buildExpression(assetPath, gaulName, isBinary, isSelfMask, unmask) {
   return { result: '0', values: { '0': clippedData } };
 }
 
-function buildMosaicExpression(lt, yearVal, isBinary, isSelfMask, unmask) {
+function buildMosaicExpression(crop, lt, yearVal, isBinary, isSelfMask, unmask) {
   const supported = COUNTRIES.filter(c => c.years.length > 0);
   const images = supported.map(co => {
     const loadExpr = {
       functionInvocationValue: {
         functionName: 'Image.load',
-        arguments: { id: { constantValue: lt.assetFn(co.slug, yearVal) } },
+        arguments: { id: { constantValue: assetId(crop, lt, co.slug, yearVal) } },
       },
     };
     return applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask);
@@ -283,11 +308,12 @@ const SEA_ZOOM   = 3.5;
 const SEA_BBOX   = [92.0, -11.0, 142.0, 29.0];
 
 // ── Initial layer state ──────────────────────────────────────────────────────
+// One entry per crop + layer type, keyed by `${cropId}-${typeId}`.
 function initLayers() {
   const s = {};
-  LAYER_TYPES.forEach(lt => {
-    s[lt.id] = { enabled: false, opacity: 0.85, loading: false, error: null, mapName: null, tileUrl: null };
-  });
+  CROPS.forEach(cr => LAYER_TYPES.forEach(lt => {
+    s[lkey(cr.id, lt.id)] = { enabled: false, opacity: 0.85, loading: false, error: null, mapName: null, tileUrl: null };
+  }));
   return s;
 }
 
@@ -309,6 +335,8 @@ export default function App() {
   const [country,     setCountry]     = useState(ALL_LABEL);
   const [year,        setYear]        = useState('2021');
   const [basemap,     setBasemap]     = useState('satellite');
+  // Which crop(s) are shown. Multiple may be active at once (e.g. rice + corn).
+  const [activeCrops, setActiveCrops] = useState(['rice']);
   const [projectId,   setProjectId]   = useState('');
   const [projectError, setProjectError] = useState(null);
   const [tokenStatus, setTokenStatus] = useState(null);
@@ -424,22 +452,23 @@ export default function App() {
     // Restore all layers + boundaries after basemap style reload
     map.on('style.load', () => {
       const current = layersRef.current;
-      LAYER_TYPES.forEach(lt => {
-        const s = current[lt.id];
+      CROPS.forEach(cr => LAYER_TYPES.forEach(lt => {
+        const key = lkey(cr.id, lt.id);
+        const s = current[key];
         if (s.tileUrl) {
-          map.addSource(`gee-${lt.id}`, { type: 'raster', tiles: [s.tileUrl], tileSize: 256 });
-          map.addLayer({ id: `gee-layer-${lt.id}`, type: 'raster', source: `gee-${lt.id}`,
+          map.addSource(`gee-${key}`, { type: 'raster', tiles: [s.tileUrl], tileSize: 256 });
+          map.addLayer({ id: `gee-layer-${key}`, type: 'raster', source: `gee-${key}`,
             paint: { 'raster-opacity': s.enabled ? s.opacity : 0 } });
         }
         // Restore per-country sub-layers (All countries mode)
         (s.allLayers ?? []).forEach(({ slug, tileUrl }) => {
-          const srcId = `gee-${lt.id}-${slug}`;
-          const lyrId = `gee-layer-${lt.id}-${slug}`;
+          const srcId = `gee-${key}-${slug}`;
+          const lyrId = `gee-layer-${key}-${slug}`;
           map.addSource(srcId, { type: 'raster', tiles: [tileUrl], tileSize: 256 });
           map.addLayer({ id: lyrId, type: 'raster', source: srcId,
             paint: { 'raster-opacity': s.enabled ? s.opacity : 0 } });
         });
-      });
+      }));
       // Restore boundaries
       const { country: cUrl, sea: sUrl } = boundaryTilesRef.current;
       if (sUrl && seaOnRef.current) {
@@ -518,25 +547,28 @@ export default function App() {
     client.requestAccessToken({ prompt: '' });
   }, [loadCountryBoundary, loadSEABoundary]);
 
-  // ── Load a single GEE layer ───────────────────────────────────────────────
-  const loadLayer = useCallback(async (typeId, countryVal, yearVal) => {
+  // ── Load a single GEE layer (for one crop + layer type) ───────────────────
+  const loadLayer = useCallback(async (cropId, typeId, countryVal, yearVal) => {
     const map = mapRef.current;
     if (!map || !tokenRef.current || !projectRef.current) return;
 
+    const key        = lkey(cropId, typeId);
+    const crop       = CROP_BY_ID[cropId];
     const lt         = LAYER_TYPES.find(l => l.id === typeId);
     const isAll      = countryVal === ALL_LABEL;
     const countryObj = isAll ? null : COUNTRIES.find(c => c.label === countryVal);
-    if (!lt || (!isAll && !countryObj)) return;
+    if (!crop || !lt || (!isAll && !countryObj)) return;
+    const vis = layerVis(lt, crop);
 
-    setLayers(prev => ({ ...prev, [typeId]: { ...prev[typeId], loading: true, error: null } }));
+    setLayers(prev => ({ ...prev, [key]: { ...prev[key], loading: true, error: null } }));
 
     if (isAll) {
       try {
         const supported = COUNTRIES.filter(c => c.years.length > 0);
         const results = await Promise.all(supported.map(async co => {
           try {
-            const expr = buildExpression(lt.assetFn(co.slug, yearVal), co.gaul, lt.isBinary, lt.isSelfMask, lt.unmask);
-            const tileUrl = await fetchGEETileUrl(expr, lt.vis);
+            const expr = buildExpression(assetId(crop, lt, co.slug, yearVal), co.gaul, lt.isBinary, lt.isSelfMask, lt.unmask);
+            const tileUrl = await fetchGEETileUrl(expr, vis);
             return { slug: co.slug, tileUrl };
           } catch (err) {
             const msg = err.message?.toLowerCase() ?? '';
@@ -546,17 +578,17 @@ export default function App() {
           }
         }));
         const loaded = results.filter(Boolean);
-        const opacity = layersRef.current[typeId].opacity;
+        const opacity = layersRef.current[key].opacity;
         loaded.forEach(({ slug, tileUrl }) => {
-          addRasterLayer(map, `gee-${typeId}-${slug}`, `gee-layer-${typeId}-${slug}`, tileUrl, opacity);
+          addRasterLayer(map, `gee-${key}-${slug}`, `gee-layer-${key}-${slug}`, tileUrl, opacity);
         });
         ['boundary-layer-sea', 'boundary-layer-country'].forEach(id => {
           if (map.getLayer(id)) map.moveLayer(id);
         });
         const next = { enabled: true, opacity, loading: false, error: null, mapName: null, tileUrl: null,
           allLayers: loaded };
-        layersRef.current = { ...layersRef.current, [typeId]: next };
-        setLayers(prev => ({ ...prev, [typeId]: next }));
+        layersRef.current = { ...layersRef.current, [key]: next };
+        setLayers(prev => ({ ...prev, [key]: next }));
       } catch (err) {
         const msg = err.message?.toLowerCase() ?? '';
         let friendly;
@@ -567,32 +599,32 @@ export default function App() {
         } else {
           friendly = err.message;
         }
-        const next = { ...layersRef.current[typeId], loading: false, error: friendly };
-        layersRef.current = { ...layersRef.current, [typeId]: next };
-        setLayers(prev => ({ ...prev, [typeId]: next }));
+        const next = { ...layersRef.current[key], loading: false, error: friendly };
+        layersRef.current = { ...layersRef.current, [key]: next };
+        setLayers(prev => ({ ...prev, [key]: next }));
       }
       return;
     }
 
     try {
       const tileUrl  = await fetchGEETileUrl(
-        buildExpression(lt.assetFn(countryObj.slug, yearVal), countryObj.gaul, lt.isBinary, lt.isSelfMask, lt.unmask),
-        lt.vis,
+        buildExpression(assetId(crop, lt, countryObj.slug, yearVal), countryObj.gaul, lt.isBinary, lt.isSelfMask, lt.unmask),
+        vis,
       );
-      const sourceId = `gee-${typeId}`;
-      const layerId  = `gee-layer-${typeId}`;
+      const sourceId = `gee-${key}`;
+      const layerId  = `gee-layer-${key}`;
 
-      addRasterLayer(map, sourceId, layerId, tileUrl, layersRef.current[typeId].opacity);
+      addRasterLayer(map, sourceId, layerId, tileUrl, layersRef.current[key].opacity);
 
       // Always push boundaries to absolute top after adding any data layer
       ['boundary-layer-sea', 'boundary-layer-country'].forEach(id => {
         if (map.getLayer(id)) map.moveLayer(id);
       });
 
-      const next = { enabled: true, opacity: layersRef.current[typeId].opacity,
+      const next = { enabled: true, opacity: layersRef.current[key].opacity,
         loading: false, error: null, mapName: null, tileUrl };
-      layersRef.current = { ...layersRef.current, [typeId]: next };
-      setLayers(prev => ({ ...prev, [typeId]: next }));
+      layersRef.current = { ...layersRef.current, [key]: next };
+      setLayers(prev => ({ ...prev, [key]: next }));
     } catch (err) {
       const msg = err.message?.toLowerCase() ?? '';
       let friendly;
@@ -605,59 +637,62 @@ export default function App() {
       } else {
         friendly = err.message;
       }
-      const next = { ...layersRef.current[typeId], loading: false, error: friendly };
-      layersRef.current = { ...layersRef.current, [typeId]: next };
-      setLayers(prev => ({ ...prev, [typeId]: next }));
+      const next = { ...layersRef.current[key], loading: false, error: friendly };
+      layersRef.current = { ...layersRef.current, [key]: next };
+      setLayers(prev => ({ ...prev, [key]: next }));
     }
   }, [fetchGEETileUrl, addRasterLayer]);
 
   // ── Remove a layer from map ───────────────────────────────────────────────
-  const removeLayerFromMap = useCallback((typeId) => {
+  const removeLayerFromMap = useCallback((cropId, typeId) => {
     const map = mapRef.current;
     if (!map) return;
+    const key = lkey(cropId, typeId);
     // Remove single-country layer
-    if (map.getLayer(`gee-layer-${typeId}`)) map.removeLayer(`gee-layer-${typeId}`);
-    if (map.getSource(`gee-${typeId}`))      map.removeSource(`gee-${typeId}`);
+    if (map.getLayer(`gee-layer-${key}`)) map.removeLayer(`gee-layer-${key}`);
+    if (map.getSource(`gee-${key}`))      map.removeSource(`gee-${key}`);
     // Remove per-country sub-layers (All countries mode)
-    const slugs = (layersRef.current[typeId]?.allLayers ?? []).map(l => l.slug);
+    const slugs = (layersRef.current[key]?.allLayers ?? []).map(l => l.slug);
     slugs.forEach(slug => {
-      if (map.getLayer(`gee-layer-${typeId}-${slug}`)) map.removeLayer(`gee-layer-${typeId}-${slug}`);
-      if (map.getSource(`gee-${typeId}-${slug}`))      map.removeSource(`gee-${typeId}-${slug}`);
+      if (map.getLayer(`gee-layer-${key}-${slug}`)) map.removeLayer(`gee-layer-${key}-${slug}`);
+      if (map.getSource(`gee-${key}-${slug}`))      map.removeSource(`gee-${key}-${slug}`);
     });
   }, []);
 
   // ── Toggle checkbox ───────────────────────────────────────────────────────
-  const handleLayerToggle = useCallback((typeId, checked) => {
+  const handleLayerToggle = useCallback((cropId, typeId, checked) => {
+    const key = lkey(cropId, typeId);
     if (checked) {
-      layersRef.current = { ...layersRef.current, [typeId]: { ...layersRef.current[typeId], enabled: true } };
-      setLayers(prev => ({ ...prev, [typeId]: { ...prev[typeId], enabled: true } }));
-      loadLayer(typeId, country, year);
+      layersRef.current = { ...layersRef.current, [key]: { ...layersRef.current[key], enabled: true } };
+      setLayers(prev => ({ ...prev, [key]: { ...prev[key], enabled: true } }));
+      loadLayer(cropId, typeId, country, year);
     } else {
-      removeLayerFromMap(typeId);
-      const next = { ...layersRef.current[typeId], enabled: false, mapName: null, tileUrl: null, error: null };
-      layersRef.current = { ...layersRef.current, [typeId]: next };
-      setLayers(prev => ({ ...prev, [typeId]: next }));
+      removeLayerFromMap(cropId, typeId);
+      const next = { ...layersRef.current[key], enabled: false, mapName: null, tileUrl: null, error: null };
+      layersRef.current = { ...layersRef.current, [key]: next };
+      setLayers(prev => ({ ...prev, [key]: next }));
     }
   }, [country, year, loadLayer, removeLayerFromMap]);
 
   // ── Opacity change ────────────────────────────────────────────────────────
-  const handleOpacity = useCallback((typeId, value) => {
+  const handleOpacity = useCallback((cropId, typeId, value) => {
     const map = mapRef.current;
-    const layerId = `gee-layer-${typeId}`;
+    const key = lkey(cropId, typeId);
+    const layerId = `gee-layer-${key}`;
     if (map?.getLayer(layerId)) map.setPaintProperty(layerId, 'raster-opacity', value);
     // Also update per-country sub-layers (All countries mode)
-    (layersRef.current[typeId]?.allLayers ?? []).forEach(({ slug }) => {
-      const id = `gee-layer-${typeId}-${slug}`;
+    (layersRef.current[key]?.allLayers ?? []).forEach(({ slug }) => {
+      const id = `gee-layer-${key}-${slug}`;
       if (map?.getLayer(id)) map.setPaintProperty(id, 'raster-opacity', value);
     });
-    const next = { ...layersRef.current[typeId], opacity: value };
-    layersRef.current = { ...layersRef.current, [typeId]: next };
-    setLayers(prev => ({ ...prev, [typeId]: next }));
+    const next = { ...layersRef.current[key], opacity: value };
+    layersRef.current = { ...layersRef.current, [key]: next };
+    setLayers(prev => ({ ...prev, [key]: next }));
   }, []);
 
   // ── Reset all layers ──────────────────────────────────────────────────────
   const handleReset = useCallback(() => {
-    LAYER_TYPES.forEach(lt => removeLayerFromMap(lt.id));
+    CROPS.forEach(cr => LAYER_TYPES.forEach(lt => removeLayerFromMap(cr.id, lt.id)));
     const fresh = initLayers();
     layersRef.current = fresh;
     setLayers(fresh);
@@ -665,13 +700,14 @@ export default function App() {
 
   // ── Refresh active layers when country/year changes ───────────────────────
   const refreshActive = useCallback((newCountry, newYear) => {
-    LAYER_TYPES.forEach(lt => {
-      if (layersRef.current[lt.id].enabled) {
-        removeLayerFromMap(lt.id);
-        layersRef.current = { ...layersRef.current, [lt.id]: { ...layersRef.current[lt.id], mapName: null, tileUrl: null } };
-        loadLayer(lt.id, newCountry, newYear);
+    CROPS.forEach(cr => LAYER_TYPES.forEach(lt => {
+      const key = lkey(cr.id, lt.id);
+      if (layersRef.current[key].enabled) {
+        removeLayerFromMap(cr.id, lt.id);
+        layersRef.current = { ...layersRef.current, [key]: { ...layersRef.current[key], mapName: null, tileUrl: null } };
+        loadLayer(cr.id, lt.id, newCountry, newYear);
       }
-    });
+    }));
   }, [loadLayer, removeLayerFromMap]);
 
   // ── Country change ────────────────────────────────────────────────────────
@@ -863,8 +899,35 @@ export default function App() {
     }
   }, [loadSEABoundary, addRasterLayer]);
 
-  const anyActive = LAYER_TYPES.some(lt => layers[lt.id].enabled);
+  // ── Crop-type toggle ──────────────────────────────────────────────────────
+  // Unticking a crop removes all of its layers from the map and disables them.
+  const handleCropToggle = useCallback((cropId, checked) => {
+    setActiveCrops(prev =>
+      checked ? (prev.includes(cropId) ? prev : [...prev, cropId])
+              : prev.filter(id => id !== cropId));
+    if (!checked) {
+      LAYER_TYPES.forEach(lt => {
+        const key = lkey(cropId, lt.id);
+        if (layersRef.current[key]?.enabled) removeLayerFromMap(cropId, lt.id);
+        layersRef.current = { ...layersRef.current,
+          [key]: { ...layersRef.current[key], enabled: false, mapName: null, tileUrl: null, error: null, allLayers: undefined } };
+      });
+      setLayers(prev => {
+        const next = { ...prev };
+        LAYER_TYPES.forEach(lt => {
+          const key = lkey(cropId, lt.id);
+          next[key] = { ...next[key], enabled: false, mapName: null, tileUrl: null, error: null, allLayers: undefined };
+        });
+        return next;
+      });
+    }
+  }, [removeLayerFromMap]);
+
+  const anyActive = CROPS.some(cr => LAYER_TYPES.some(lt => layers[lkey(cr.id, lt.id)].enabled));
   const canLoad   = tokenStatus === 'ok' && projectId.trim();
+  // Export targets one crop's folder — use the single active crop, or rice when
+  // rice is among several active crops.
+  const exportCrop = CROP_BY_ID[activeCrops.includes('rice') ? 'rice' : (activeCrops[0] ?? 'rice')] ?? CROP_BY_ID.rice;
 
   return (
     <div className="app">
@@ -873,8 +936,8 @@ export default function App() {
         <div className="sidebar-header">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
-              <div className="sidebar-title">SEA Rice Viewer</div>
-              <div className="sidebar-subtitle">Southeast Asia · Rice Mapping</div>
+              <div className="sidebar-title">SEA Staple Crop Viewer</div>
+              <div className="sidebar-subtitle">Southeast Asia · Crop Mapping</div>
             </div>
             <button className="sidebar-toggle" onClick={() => setSidebarOpen(false)}
               title="Collapse panel">‹</button>
@@ -907,6 +970,19 @@ export default function App() {
             <select className="select" value={basemap} onChange={handleBasemap}>
               {BASEMAPS.map(b => <option key={b.id} value={b.id}>{b.label}</option>)}
             </select>
+          </div>
+
+          {/* Crop Type — tick one or more crops; layers below apply per crop */}
+          <div className="section">
+            <div className="section-label">Crop Type</div>
+            {CROPS.map(cr => (
+              <label key={cr.id} className="checkbox-row">
+                <input type="checkbox" checked={activeCrops.includes(cr.id)}
+                  onChange={e => handleCropToggle(cr.id, e.target.checked)} />
+                <span className="layer-dot" style={{ background: `#${cr.binaryColor}` }} />
+                <span className="checkbox-label">{cr.label}</span>
+              </label>
+            ))}
           </div>
 
           {/* ── Sections locked until signed in ─────────────────────────── */}
@@ -952,31 +1028,43 @@ export default function App() {
                 Sign in and enter Project ID to enable layers.
               </div>
             )}
-            {LAYER_TYPES.map(lt => {
-              const s = layers[lt.id];
-              return (
-                <div key={lt.id}>
-                  <label className={`checkbox-row ${s.loading ? 'loading' : ''} ${s.error ? 'error' : ''}`}>
-                    <input type="checkbox" checked={s.enabled}
-                      disabled={!canLoad || s.loading}
-                      onChange={e => handleLayerToggle(lt.id, e.target.checked)} />
-                    <span className="layer-dot" style={{ background: lt.color }} />
-                    <span className="checkbox-label">
-                      {s.loading ? `Loading ${lt.id}…` : lt.label}
-                    </span>
-                  </label>
-                  {s.error && <div className="error-box">{s.error}</div>}
-                  {s.enabled && !s.loading && (
-                    <div className="opacity-row">
-                      <span className="opacity-label">Opacity:</span>
-                      <input type="range" min={0} max={1} step={0.05} value={s.opacity}
-                        onChange={e => handleOpacity(lt.id, Number(e.target.value))} />
-                      <span className="opacity-val">{Math.round(s.opacity * 100)}%</span>
+            {activeCrops.length === 0 && (
+              <div className="auth-status hint" style={{ marginBottom: 6 }}>
+                Select a crop type above to enable layers.
+              </div>
+            )}
+            {CROPS.filter(cr => activeCrops.includes(cr.id)).map(cr => (
+              <div key={cr.id} style={{ marginBottom: 8 }}>
+                <div className="section-sublabel">{cr.label}</div>
+                {LAYER_TYPES.map(lt => {
+                  const key = lkey(cr.id, lt.id);
+                  const s = layers[key];
+                  const dotColor = lt.id === 'Binary' ? `#${cr.binaryColor}` : lt.color;
+                  return (
+                    <div key={key}>
+                      <label className={`checkbox-row ${s.loading ? 'loading' : ''} ${s.error ? 'error' : ''}`}>
+                        <input type="checkbox" checked={s.enabled}
+                          disabled={!canLoad || s.loading}
+                          onChange={e => handleLayerToggle(cr.id, lt.id, e.target.checked)} />
+                        <span className="layer-dot" style={{ background: dotColor }} />
+                        <span className="checkbox-label">
+                          {s.loading ? `Loading ${lt.id}…` : lt.label}
+                        </span>
+                      </label>
+                      {s.error && <div className="error-box">{s.error}</div>}
+                      {s.enabled && !s.loading && (
+                        <div className="opacity-row">
+                          <span className="opacity-label">Opacity:</span>
+                          <input type="range" min={0} max={1} step={0.05} value={s.opacity}
+                            onChange={e => handleOpacity(cr.id, lt.id, Number(e.target.value))} />
+                          <span className="opacity-val">{Math.round(s.opacity * 100)}%</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            ))}
             <button className="btn btn-reset" style={{ marginTop: 8 }} onClick={handleReset}>
               Reset All Layers
             </button>
@@ -1007,31 +1095,37 @@ export default function App() {
           <div className="section">
             <div className="section-label">Legend</div>
             {!anyActive && <div className="auth-status hint">No layers active.</div>}
-            {LAYER_TYPES.filter(lt => layers[lt.id].enabled && !layers[lt.id].loading).map(lt => (
-              <div key={lt.id} className="legend-item">
-                <div className="legend-type-label" style={{ color: lt.color }}>{lt.label}</div>
-                {lt.legendType === 'gradient' && (
-                  <>
-                    <div className="legend-gradient">
-                      {lt.legendPalette.map((c, i) => (
-                        <div key={i} className="legend-gradient-seg" style={{ background: c }} />
+            {CROPS.filter(cr => activeCrops.includes(cr.id)).flatMap(cr =>
+              LAYER_TYPES
+                .filter(lt => layers[lkey(cr.id, lt.id)].enabled && !layers[lkey(cr.id, lt.id)].loading)
+                .map(lt => {
+                  const labelColor = lt.id === 'Binary' ? `#${cr.binaryColor}` : lt.color;
+                  return (
+                    <div key={lkey(cr.id, lt.id)} className="legend-item">
+                      <div className="legend-type-label" style={{ color: labelColor }}>{cr.label} · {lt.label}</div>
+                      {lt.legendType === 'gradient' && (
+                        <>
+                          <div className="legend-gradient">
+                            {lt.legendPalette.map((c, i) => (
+                              <div key={i} className="legend-gradient-seg" style={{ background: c }} />
+                            ))}
+                          </div>
+                          <div className="legend-ticks">
+                            <span>{lt.legendMin}</span>
+                            <span style={{ color: '#aaaacc', fontSize: 9 }}>{lt.legendLabel}</span>
+                            <span>{lt.legendMax}</span>
+                          </div>
+                        </>
+                      )}
+                      {lt.legendType === 'swatch' && layerLegendSwatches(lt, cr).map((sw, i) => (
+                        <div key={i} className="legend-swatch-row">
+                          <div className="legend-swatch" style={{ background: sw.color }} />
+                          <span className="legend-swatch-label">{sw.label}</span>
+                        </div>
                       ))}
                     </div>
-                    <div className="legend-ticks">
-                      <span>{lt.legendMin}</span>
-                      <span style={{ color: '#aaaacc', fontSize: 9 }}>{lt.legendLabel}</span>
-                      <span>{lt.legendMax}</span>
-                    </div>
-                  </>
-                )}
-                {lt.legendType === 'swatch' && lt.legendSwatches.map((sw, i) => (
-                  <div key={i} className="legend-swatch-row">
-                    <div className="legend-swatch" style={{ background: sw.color }} />
-                    <span className="legend-swatch-label">{sw.label}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
+                  );
+                }))}
           </div>
 
           </div>{/* end sidebar-locked */}
@@ -1112,6 +1206,8 @@ export default function App() {
           gaulName={COUNTRIES.find(c => c.label === country)?.gaul ?? country}
           year={year}
           projectId={projectId}
+          assetPrefix={exportCrop.prefix}
+          cropLabel={exportCrop.label}
           selectedTiles={selectedTiles}
           onSelectAllTiles={() => {
             const co = COUNTRIES.find(c => c.label === country);

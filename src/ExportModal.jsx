@@ -3,7 +3,7 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 // ── Layer / scale options ─────────────────────────────────────────────────────
 const LAYER_OPTIONS = [
   { id: 'Mean',   label: '5-Fold Mean Probability', color: '#e06c75', suffix: 'SEA_Avg',  extra: '' },
-  { id: 'Std',    label: 'Standard Deviation',       color: '#e5c07b', suffix: 'SEA_Std',  extra: '' },
+  // { id: 'Std',    label: 'Standard Deviation',       color: '#e5c07b', suffix: 'SEA_Std',  extra: '' },  // disabled
   { id: 'Binary', label: 'Binary',                     color: '#61afef', suffix: 'SEA_binary', outSuffix: 'SEA_binary', extra: 'binary', clearNodata: true },
   // { id: 'Pseudo', label: 'Pseudo-Labeling', ... },  // disabled
 ];
@@ -14,12 +14,13 @@ const SCALES = [10, 30, 100, 250, 1000];
 const outSuf = l => l.outSuffix ?? l.suffix;
 
 // ── Script helpers ────────────────────────────────────────────────────────────
-function scriptHeader(mode, country, year, scale, projectId) {
+function scriptHeader(mode, country, year, scale, projectId, assetPrefix) {
   const proj = projectId || 'your-gcp-project-id';
+  const prefix = (assetPrefix || 'projects/tony-1122/assets/NIE/rice').replace(/\/$/, '');
   return (
     '#!/usr/bin/env python3\n' +
     '"""\n' +
-    'SEA Rice Viewer — Export Script\n' +
+    'SEA Staple Crop Viewer — Export Script\n' +
     `Mode    : ${mode}\n` +
     `Country : ${country}\n` +
     `Year    : ${year}\n` +
@@ -28,7 +29,7 @@ function scriptHeader(mode, country, year, scale, projectId) {
     'import ee\n\n' +
     '# ── GCP project ID — set to the project you signed in with ───────────────\n' +
     `GCP_PROJECT  = '${proj}'\n` +
-    "ASSET_PREFIX = 'projects/tony-1122/assets/NIE/rice'\n\n" +
+    `ASSET_PREFIX = '${prefix}'\n\n` +
     'ee.Authenticate()\n' +
     'ee.Initialize(project=GCP_PROJECT)\n\n'
   );
@@ -44,8 +45,8 @@ function layerImg(l, slug) {
 }
 
 // Google Drive — whole country
-function genDriveCountry({ country, slug, gaulName, year, scale, folder, selectedLayers, projectId }) {
-  const hdr = scriptHeader('Google Drive — Whole Country', country, year, scale, projectId);
+function genDriveCountry({ country, slug, gaulName, year, scale, folder, selectedLayers, projectId, assetPrefix }) {
+  const hdr = scriptHeader('Google Drive — Whole Country', country, year, scale, projectId, assetPrefix);
   return hdr +
     `COUNTRY       = '${slug}'\n` +
     `GAUL_NAME     = "${gaulName}"\n` +
@@ -73,9 +74,9 @@ function genDriveCountry({ country, slug, gaulName, year, scale, folder, selecte
 }
 
 // Google Drive — grid tiles
-function genDriveTiles({ country, slug, year, scale, folder, selectedLayers, activeTiles, projectId }) {
+function genDriveTiles({ country, slug, year, scale, folder, selectedLayers, activeTiles, projectId, assetPrefix }) {
   const n   = activeTiles.length;
-  const hdr = scriptHeader(`Google Drive — ${n} Tiles`, country, year, scale, projectId);
+  const hdr = scriptHeader(`Google Drive — ${n} Tiles`, country, year, scale, projectId, assetPrefix);
   const tilesList = activeTiles.map(t =>
     `    {'id': '${t.id}', 'bbox': [${t.bbox.join(', ')}]},`
   ).join('\n');
@@ -210,9 +211,9 @@ const PY_SUBDIVIDE =
   `        print('    [warn] rasterio not found; sub-tiles kept separately (pip install rasterio)')\n\n`;
 
 // Local download — whole country (auto-tiled)
-function genLocalCountry({ country, slug, gaulName, year, scale, selectedLayers, outputDir, projectId }) {
+function genLocalCountry({ country, slug, gaulName, year, scale, selectedLayers, outputDir, projectId, assetPrefix }) {
   const dir = outputDir || './sea_rice_output';
-  const hdr = scriptHeader('Local Download — Whole Country', country, year, scale, projectId);
+  const hdr = scriptHeader('Local Download — Whole Country', country, year, scale, projectId, assetPrefix);
   return hdr +
     PY_SUBDIVIDE +
     `COUNTRY    = '${slug}'\n` +
@@ -246,10 +247,10 @@ function genLocalCountry({ country, slug, gaulName, year, scale, selectedLayers,
 }
 
 // Local download — grid tiles (auto-subdivided per tile, mosaicked after)
-function genLocalTiles({ country, slug, year, scale, selectedLayers, outputDir, activeTiles, projectId }) {
+function genLocalTiles({ country, slug, year, scale, selectedLayers, outputDir, activeTiles, projectId, assetPrefix }) {
   const n   = activeTiles.length;
   const dir = outputDir || './sea_rice_output';
-  const hdr = scriptHeader(`Local Download — ${n} Tiles`, country, year, scale, projectId);
+  const hdr = scriptHeader(`Local Download — ${n} Tiles`, country, year, scale, projectId, assetPrefix);
   const tilesList = activeTiles.map(t =>
     `    {'id': '${t.id}', 'bbox': [${t.bbox.join(', ')}]},`
   ).join('\n');
@@ -293,7 +294,7 @@ function genMergeScript({ country, year, selectedLayers, outputDir, exportTarget
   return (
     '#!/usr/bin/env python3\n' +
     '"""\n' +
-    'SEA Rice Viewer — Merge Script (GDAL)\n' +
+    'SEA Staple Crop Viewer — Merge Script (GDAL)\n' +
     'Merges downloaded tile GeoTIFFs into one file per layer.\n' +
     `Country : ${country}\n` +
     `Year    : ${year}\n` +
@@ -339,7 +340,7 @@ function genMergeScript({ country, year, selectedLayers, outputDir, exportTarget
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ExportModal({
-  country, slug, gaulName, year, projectId,
+  country, slug, gaulName, year, projectId, assetPrefix, cropLabel,
   selectedTiles,
   onSelectAllTiles, onSelectNoTiles,
   onClose,
@@ -370,14 +371,14 @@ export default function ExportModal({
 
   const script = useMemo(() => {
     if (!scale || !exportTarget || !exportDest || selectedLayers.length === 0) return null;
-    const args = { country, slug, gaulName, year, scale, folder, outputDir, selectedLayers, activeTiles, projectId };
+    const args = { country, slug, gaulName, year, scale, folder, outputDir, selectedLayers, activeTiles, projectId, assetPrefix };
     if (exportTarget === 'country') {
       return exportDest === 'drive' ? genDriveCountry(args) : genLocalCountry(args);
     } else {
       return exportDest === 'drive' ? genDriveTiles(args)   : genLocalTiles(args);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [country, slug, gaulName, year, scale, folder, outputDir, exportTarget, exportDest, projectId,
+  }, [country, slug, gaulName, year, scale, folder, outputDir, exportTarget, exportDest, projectId, assetPrefix,
       JSON.stringify(selectedLayers.map(l => l.id)),
       activeTiles.length, JSON.stringify(activeTiles.map(t => t.id))]);
 
@@ -424,7 +425,7 @@ export default function ExportModal({
             <span className="modal-dot yellow" />
             <span className="modal-dot green"  />
           </div>
-          <span className="modal-title">Export — {country} {year}</span>
+          <span className="modal-title">Export — {cropLabel ? `${cropLabel} · ` : ''}{country} {year}</span>
         </div>
 
         <div className="modal-body">

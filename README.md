@@ -1,6 +1,6 @@
-# SEA Rice Viewer
+# SEA Staple Crop Viewer
 
-Interactive web viewer for Southeast Asia rice mapping results.
+Interactive web viewer for Southeast Asia crop mapping results.
 Browse, compare, and export GEE assets as GeoTIFF for any country and year.
 
 ---
@@ -79,7 +79,7 @@ Once the project is ready, paste the **Project ID** into the app's Authenticatio
 1. Enter your **GCP Project ID** in the Authentication panel.
 2. Click **Sign In with Google** — authorise with the account that has GEE access.
 3. Select a **Country** (including **All countries**) and **Year**.
-4. Toggle **Map Layers** to visualise rice probability on the map (5-Fold Ensemble Probability, Standard Deviation, and Binary are currently available).
+4. Toggle **Map Layers** to visualise crop probability on the map (5-Fold Ensemble Probability and Binary are currently available).
 5. Use the **Export** button to generate a ready-to-run Python download script.
 
 ---
