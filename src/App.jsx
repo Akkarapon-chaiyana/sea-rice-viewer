@@ -498,6 +498,7 @@ export default function App() {
 
   // ── OAuth sign-in ─────────────────────────────────────────────────────────
   const handleSignIn = useCallback(() => {
+    if (!projectRef.current) { setProjectError('Enter your Earth Engine Project ID first.'); return; }
     const clientId = import.meta.env.VITE_GEE_OAUTH_CLIENT_ID;
     if (!clientId || !window.google?.accounts?.oauth2) { setTokenStatus('error'); return; }
     setTokenStatus('fetching');
@@ -952,7 +953,7 @@ export default function App() {
               style={{ marginBottom: projectError ? 3 : 5, borderColor: projectError ? '#e06c75' : undefined }} />
             {projectError && <div className="auth-status error" style={{ marginBottom: 5 }}>{projectError}</div>}
             <button className={`btn btn-sign-in ${tokenStatus === 'ok' ? 'signed-in' : ''}`}
-              onClick={handleSignIn} disabled={tokenStatus === 'fetching'}>
+              onClick={handleSignIn} disabled={tokenStatus === 'fetching' || !projectId.trim()}>
               {tokenStatus === 'fetching' && <span className="spin">⟳</span>}
               {tokenStatus === 'ok' ? '✓ Signed In' : 'Sign In with Google'}
             </button>
