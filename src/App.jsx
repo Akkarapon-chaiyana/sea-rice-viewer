@@ -982,11 +982,11 @@ export default function App() {
               style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 10 }}>
               {CROPS.map(cr => (
                 <label key={cr.id} className="checkbox-row">
+                  <span className="layer-dot" style={{ background: `#${cr.binaryColor}` }} />
                   <input type="checkbox" checked={activeCrops.includes(cr.id)}
                     disabled={!canLoad}
                     onChange={e => handleCropToggle(cr.id, e.target.checked)} />
                   <span className="checkbox-label">{cr.label}</span>
-                  <span className="layer-dot" style={{ background: `#${cr.binaryColor}` }} />
                 </label>
               ))}
             </div>
