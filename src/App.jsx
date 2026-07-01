@@ -1144,8 +1144,8 @@ export default function App() {
 
           </div>{/* end sidebar-locked */}
 
-          {/* Export — locked (greyed, non-clickable) until signed in */}
-          <div className={`section${tokenStatus !== 'ok' ? ' sidebar-locked' : ''}`}>
+          {/* Export — permanently locked (greyed, non-clickable) */}
+          <div className="section sidebar-locked">
             <div className="section-label">Export</div>
 
             {/* Step 1 — select tiles on map */}
