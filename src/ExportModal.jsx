@@ -340,7 +340,7 @@ function genMergeScript({ country, year, selectedLayers, outputDir, exportTarget
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ExportModal({
-  country, slug, gaulName, year, projectId, assetPrefix, cropLabel,
+  country, slug, gaulName, year, projectId, crops = [],
   selectedTiles,
   onSelectAllTiles, onSelectNoTiles,
   onClose,
@@ -348,6 +348,7 @@ export default function ExportModal({
   const [selected,     setSelected]     = useState({ Mean: false, Std: false, Binary: false, Pseudo: false });
   // Gate values always start null so the wizard runs sequentially every open.
   // Text-only fields (folder, outputDir) are remembered via localStorage.
+  const [cropId,       setCropId]       = useState(null);   // which crop to export
   const [scale,        setScale]        = useState(null);
   const [exportTarget, setExportTarget] = useState(null); // 'country' | 'tiles'
   const [exportDest,   setExportDest]   = useState(null); // 'drive' | 'local'
@@ -369,8 +370,13 @@ export default function ExportModal({
   const activeTiles    = [...(selectedTiles?.values() || [])];
   const totalTiles     = selectedTiles?.size ?? 0;
 
+  // Chosen crop drives the asset folder used in the generated script.
+  const cropObj      = crops.find(c => c.id === cropId) || null;
+  const assetPrefix  = cropObj?.prefix ?? null;
+  const cropLabel    = cropObj?.label ?? null;
+
   const script = useMemo(() => {
-    if (!scale || !exportTarget || !exportDest || selectedLayers.length === 0) return null;
+    if (!cropId || !scale || !exportTarget || !exportDest || selectedLayers.length === 0) return null;
     const args = { country, slug, gaulName, year, scale, folder, outputDir, selectedLayers, activeTiles, projectId, assetPrefix };
     if (exportTarget === 'country') {
       return exportDest === 'drive' ? genDriveCountry(args) : genLocalCountry(args);
@@ -449,8 +455,23 @@ export default function ExportModal({
             )}
           </div>
 
-          {/* Layers */}
+          {/* Crop type */}
           <div className="modal-section">
+            <div className="modal-label">Crop type</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {crops.map(c => (
+                <button key={c.id}
+                  className={`scale-btn ${cropId === c.id ? 'active' : ''}`}
+                  onClick={() => setCropId(c.id)}>
+                  <span className="layer-dot" style={{ background: `#${c.binaryColor}`, marginRight: 6 }} />
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Layers */}
+          <div className={`modal-section${!cropId ? ' modal-locked' : ''}`}>
             <div className="modal-label">Layers to export</div>
             <div className="modal-grid2">
               {LAYER_OPTIONS.map(l => (
@@ -465,7 +486,7 @@ export default function ExportModal({
           </div>
 
           {/* Scale */}
-          <div className={`modal-section${selectedLayers.length === 0 ? ' modal-locked' : ''}`}>
+          <div className={`modal-section${!cropId || selectedLayers.length === 0 ? ' modal-locked' : ''}`}>
             <div className="modal-label">Resolution (m/px)</div>
             <div className="modal-scale-row">
               {SCALES.map(s => (

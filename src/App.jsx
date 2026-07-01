@@ -336,7 +336,8 @@ export default function App() {
   const [year,        setYear]        = useState('2021');
   const [basemap,     setBasemap]     = useState('satellite');
   // Which crop(s) are shown. Multiple may be active at once (e.g. rice + corn).
-  const [activeCrops, setActiveCrops] = useState(['rice']);
+  // Starts empty — the user ticks crops themselves.
+  const [activeCrops, setActiveCrops] = useState([]);
   const [projectId,   setProjectId]   = useState('');
   const [projectError, setProjectError] = useState(null);
   const [tokenStatus, setTokenStatus] = useState(null);
@@ -925,9 +926,6 @@ export default function App() {
 
   const anyActive = CROPS.some(cr => LAYER_TYPES.some(lt => layers[lkey(cr.id, lt.id)].enabled));
   const canLoad   = tokenStatus === 'ok' && projectId.trim();
-  // Export targets one crop's folder — use the single active crop, or rice when
-  // rice is among several active crops.
-  const exportCrop = CROP_BY_ID[activeCrops.includes('rice') ? 'rice' : (activeCrops[0] ?? 'rice')] ?? CROP_BY_ID.rice;
 
   return (
     <div className="app">
@@ -1221,8 +1219,7 @@ export default function App() {
           gaulName={COUNTRIES.find(c => c.label === country)?.gaul ?? country}
           year={year}
           projectId={projectId}
-          assetPrefix={exportCrop.prefix}
-          cropLabel={exportCrop.label}
+          crops={CROPS}
           selectedTiles={selectedTiles}
           onSelectAllTiles={() => {
             const co = COUNTRIES.find(c => c.label === country);
