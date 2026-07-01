@@ -986,6 +986,7 @@ export default function App() {
                     disabled={!canLoad}
                     onChange={e => handleCropToggle(cr.id, e.target.checked)} />
                   <span className="checkbox-label">{cr.label}</span>
+                  <span className="layer-dot" style={{ background: `#${cr.binaryColor}` }} />
                 </label>
               ))}
             </div>
