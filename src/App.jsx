@@ -39,13 +39,13 @@ const STANDARD_LAYER_TYPES = [
 const INTENSITY_LAYER_TYPES = [
   {
     id: 'Intensity', label: 'Rice Intensity', color: '#98c379',
-    vis: { ranges: [{ min: 1, max: 3 }], paletteColors: ['00ff00', '0000ff', 'ff0000'] },
+    vis: { ranges: [{ min: 1, max: 3 }], paletteColors: ['00ff00', 'ffff00', 'ff0000'] },
     assetName: (slug, year) => `SEA_rice_intensity_${slug}_${year}`,
     isBinary: false, isSelfMask: true,
     legendType: 'discrete',
     legendSwatches: [
       { color: '#00ff00', label: '1 cycle' },
-      { color: '#0000ff', label: '2 cycles' },
+      { color: '#ffff00', label: '2 cycles' },
       { color: '#ff0000', label: '3 cycles' },
     ],
   },
