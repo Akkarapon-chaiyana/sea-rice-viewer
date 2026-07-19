@@ -5,37 +5,10 @@ import ExportModal from './ExportModal';
 import { cellBbox, generateCellsForBbox, CELL_DEG } from './utils/gridTiles';
 
 // ── Constants ────────────────────────────────────────────────────────────────
-// Crop types share the same asset structure (SEA_Avg_/SEA_binary_<slug>_<year>),
-// differing only by folder prefix and the colour used for the binary layer.
-const CROPS = [
-  { id: 'rice', label: 'Rice', prefix: 'projects/tony-1122/assets/NIE/rice/', binaryColor: '00ff00' },
-  { id: 'corn', label: 'Corn', prefix: 'projects/tony-1122/assets/NIE/corn/', binaryColor: 'ffff00' },
-];
-const CROP_BY_ID = Object.fromEntries(CROPS.map(c => [c.id, c]));
-// Composite key identifying a crop + layer type on the map and in layer state.
-const lkey = (cropId, typeId) => `${cropId}-${typeId}`;
-const GEE_API      = 'https://earthengine.googleapis.com/v1';
-const COUNTRIES = [
-  { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                         center: [100.5,  13.5], zoom: 5,  bbox: [ 97.3,  5.5, 105.7, 20.5], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
-  { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', gaul: 'Myanmar',                          center: [ 96.0,  19.0], zoom: 5,  bbox: [ 92.1,  9.6, 101.2, 28.5], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
-  { label: 'Vietnam',     slug: 'vietnam',     iso: 'VNM', gaul: 'Viet Nam',                         center: [106.0,  16.0], zoom: 5,  bbox: [102.1,  8.3, 109.5, 23.4], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
-  { label: 'Laos',        slug: 'laos',        iso: 'LAO', gaul: "Lao People's Democratic Republic", center: [103.0,  18.0], zoom: 6,  bbox: [100.1, 13.9, 107.7, 22.5], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
-  { label: 'Cambodia',    slug: 'cambodia',    iso: 'KHM', gaul: 'Cambodia',                         center: [105.0,  12.5], zoom: 6,  bbox: [102.3,  9.9, 107.7, 14.7], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
-  { label: 'Philippines', slug: 'philippines', iso: 'PHL', gaul: 'Philippines',                      center: [122.0,  12.0], zoom: 5,  bbox: [116.9,  4.6, 126.6, 20.5], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
-  { label: 'Malaysia',    slug: 'malaysia',    iso: 'MYS', gaul: 'Malaysia',                         center: [109.0,   3.5], zoom: 5,  bbox: [ 99.6,  0.8, 119.3,  7.4], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
-  { label: 'Indonesia',   slug: 'indonesia',   iso: 'IDN', gaul: 'Indonesia',                        center: [113.0,  -1.0], zoom: 5,  bbox: [ 95.0,-11.0, 141.0,  5.9], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
-  { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                center: [114.7,   4.5], zoom: 8,  bbox: [114.1,  4.0, 115.4,  5.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
-  { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8,  bbox: [124.0, -9.5, 127.4, -8.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
-  { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10, bbox: [103.6,  1.1, 104.1,  1.5], years: [] },
-];
-
-const SEA_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
-
-const YEARS = ['2019', '2020', '2021', '2022', '2023', '2024', '2025'];
-
 // `assetName` returns the file name only; the crop's folder prefix is prepended
 // at load time so the same layer type works for any crop.
-const LAYER_TYPES = [
+// Mean/Binary crops share the same asset structure (SEA_Avg_/SEA_binary_<slug>_<year>).
+const STANDARD_LAYER_TYPES = [
   {
     id: 'Mean', label: '5-Fold Ensemble Probability', color: '#e06c75',
     vis: { ranges: [{ min: 0, max: 100 }], paletteColors: ['ffffff','ffff00','ffa500','ff0000','800080'] },
@@ -60,6 +33,53 @@ const LAYER_TYPES = [
   },
   // { id: 'Pseudo', label: 'Pseudo-Labeling', ... },  // disabled
 ];
+
+// Rice Intensity: a single categorical asset (values 1/2/3 → green/yellow/red),
+// not split into Mean/Binary like the other crops.
+const INTENSITY_LAYER_TYPES = [
+  {
+    id: 'Intensity', label: 'Rice Intensity', color: '#98c379',
+    vis: { ranges: [{ min: 1, max: 3 }], paletteColors: ['00ff00', 'ffff00', 'ff0000'] },
+    assetName: (slug, year) => `SEA_rice_intensity_${slug}_${year}`,
+    isBinary: false, isSelfMask: true,
+    legendType: 'discrete',
+    legendSwatches: [
+      { color: '#00ff00', label: 'Low (1)' },
+      { color: '#ffff00', label: 'Medium (2)' },
+      { color: '#ff0000', label: 'High (3)' },
+    ],
+  },
+];
+
+const ALL_LAYER_TYPES = [...STANDARD_LAYER_TYPES, ...INTENSITY_LAYER_TYPES];
+
+// Crop types — each defines its own folder prefix and set of layer types.
+const CROPS = [
+  { id: 'rice', label: 'Rice', prefix: 'projects/tony-1122/assets/NIE/rice/', binaryColor: '00ff00', layerTypes: STANDARD_LAYER_TYPES },
+  { id: 'corn', label: 'Corn', prefix: 'projects/tony-1122/assets/NIE/corn/', binaryColor: 'ffff00', layerTypes: STANDARD_LAYER_TYPES },
+  { id: 'rice_intensity', label: 'Rice Intensity', prefix: 'projects/tony-1122/assets/NIE/rice_intensity/', binaryColor: '00bcd4', layerTypes: INTENSITY_LAYER_TYPES },
+];
+const CROP_BY_ID = Object.fromEntries(CROPS.map(c => [c.id, c]));
+// Composite key identifying a crop + layer type on the map and in layer state.
+const lkey = (cropId, typeId) => `${cropId}-${typeId}`;
+const GEE_API      = 'https://earthengine.googleapis.com/v1';
+const COUNTRIES = [
+  { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                         center: [100.5,  13.5], zoom: 5,  bbox: [ 97.3,  5.5, 105.7, 20.5], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
+  { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', gaul: 'Myanmar',                          center: [ 96.0,  19.0], zoom: 5,  bbox: [ 92.1,  9.6, 101.2, 28.5], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
+  { label: 'Vietnam',     slug: 'vietnam',     iso: 'VNM', gaul: 'Viet Nam',                         center: [106.0,  16.0], zoom: 5,  bbox: [102.1,  8.3, 109.5, 23.4], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
+  { label: 'Laos',        slug: 'laos',        iso: 'LAO', gaul: "Lao People's Democratic Republic", center: [103.0,  18.0], zoom: 6,  bbox: [100.1, 13.9, 107.7, 22.5], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
+  { label: 'Cambodia',    slug: 'cambodia',    iso: 'KHM', gaul: 'Cambodia',                         center: [105.0,  12.5], zoom: 6,  bbox: [102.3,  9.9, 107.7, 14.7], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
+  { label: 'Philippines', slug: 'philippines', iso: 'PHL', gaul: 'Philippines',                      center: [122.0,  12.0], zoom: 5,  bbox: [116.9,  4.6, 126.6, 20.5], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
+  { label: 'Malaysia',    slug: 'malaysia',    iso: 'MYS', gaul: 'Malaysia',                         center: [109.0,   3.5], zoom: 5,  bbox: [ 99.6,  0.8, 119.3,  7.4], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
+  { label: 'Indonesia',   slug: 'indonesia',   iso: 'IDN', gaul: 'Indonesia',                        center: [113.0,  -1.0], zoom: 5,  bbox: [ 95.0,-11.0, 141.0,  5.9], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
+  { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                center: [114.7,   4.5], zoom: 8,  bbox: [114.1,  4.0, 115.4,  5.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
+  { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8,  bbox: [124.0, -9.5, 127.4, -8.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
+  { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10, bbox: [103.6,  1.1, 104.1,  1.5], years: [] },
+];
+
+const SEA_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
+
+const YEARS = ['2019', '2020', '2021', '2022', '2023', '2024', '2025'];
 
 // Full asset id for a crop + layer type.
 const assetId = (crop, lt, slug, year) => `${crop.prefix}${lt.assetName(slug, year)}`;
@@ -311,7 +331,7 @@ const SEA_BBOX   = [92.0, -11.0, 142.0, 29.0];
 // One entry per crop + layer type, keyed by `${cropId}-${typeId}`.
 function initLayers() {
   const s = {};
-  CROPS.forEach(cr => LAYER_TYPES.forEach(lt => {
+  CROPS.forEach(cr => cr.layerTypes.forEach(lt => {
     s[lkey(cr.id, lt.id)] = { enabled: false, opacity: 0.85, loading: false, error: null, mapName: null, tileUrl: null };
   }));
   return s;
@@ -453,7 +473,7 @@ export default function App() {
     // Restore all layers + boundaries after basemap style reload
     map.on('style.load', () => {
       const current = layersRef.current;
-      CROPS.forEach(cr => LAYER_TYPES.forEach(lt => {
+      CROPS.forEach(cr => cr.layerTypes.forEach(lt => {
         const key = lkey(cr.id, lt.id);
         const s = current[key];
         if (s.tileUrl) {
@@ -556,7 +576,7 @@ export default function App() {
 
     const key        = lkey(cropId, typeId);
     const crop       = CROP_BY_ID[cropId];
-    const lt         = LAYER_TYPES.find(l => l.id === typeId);
+    const lt         = crop?.layerTypes?.find(l => l.id === typeId);
     const isAll      = countryVal === ALL_LABEL;
     const countryObj = isAll ? null : COUNTRIES.find(c => c.label === countryVal);
     if (!crop || !lt || (!isAll && !countryObj)) return;
@@ -694,7 +714,7 @@ export default function App() {
 
   // ── Reset all layers ──────────────────────────────────────────────────────
   const handleReset = useCallback(() => {
-    CROPS.forEach(cr => LAYER_TYPES.forEach(lt => removeLayerFromMap(cr.id, lt.id)));
+    CROPS.forEach(cr => cr.layerTypes.forEach(lt => removeLayerFromMap(cr.id, lt.id)));
     const fresh = initLayers();
     layersRef.current = fresh;
     setLayers(fresh);
@@ -702,7 +722,7 @@ export default function App() {
 
   // ── Refresh active layers when country/year changes ───────────────────────
   const refreshActive = useCallback((newCountry, newYear) => {
-    CROPS.forEach(cr => LAYER_TYPES.forEach(lt => {
+    CROPS.forEach(cr => cr.layerTypes.forEach(lt => {
       const key = lkey(cr.id, lt.id);
       if (layersRef.current[key].enabled) {
         removeLayerFromMap(cr.id, lt.id);
@@ -908,7 +928,8 @@ export default function App() {
       checked ? (prev.includes(cropId) ? prev : [...prev, cropId])
               : prev.filter(id => id !== cropId));
     if (!checked) {
-      LAYER_TYPES.forEach(lt => {
+      const cropLayerTypes = CROP_BY_ID[cropId].layerTypes;
+      cropLayerTypes.forEach(lt => {
         const key = lkey(cropId, lt.id);
         if (layersRef.current[key]?.enabled) removeLayerFromMap(cropId, lt.id);
         layersRef.current = { ...layersRef.current,
@@ -916,7 +937,7 @@ export default function App() {
       });
       setLayers(prev => {
         const next = { ...prev };
-        LAYER_TYPES.forEach(lt => {
+        cropLayerTypes.forEach(lt => {
           const key = lkey(cropId, lt.id);
           next[key] = { ...next[key], enabled: false, mapName: null, tileUrl: null, error: null, allLayers: undefined };
         });
@@ -925,7 +946,7 @@ export default function App() {
     }
   }, [removeLayerFromMap]);
 
-  const anyActive = CROPS.some(cr => LAYER_TYPES.some(lt => layers[lkey(cr.id, lt.id)].enabled));
+  const anyActive = CROPS.some(cr => cr.layerTypes.some(lt => layers[lkey(cr.id, lt.id)].enabled));
   const canLoad   = tokenStatus === 'ok' && projectId.trim();
 
   return (
@@ -1044,7 +1065,7 @@ export default function App() {
             {CROPS.filter(cr => activeCrops.includes(cr.id)).map(cr => (
               <div key={cr.id} style={{ marginBottom: 8 }}>
                 <div className="section-sublabel">{cr.label}</div>
-                {LAYER_TYPES.map(lt => {
+                {cr.layerTypes.map(lt => {
                   const key = lkey(cr.id, lt.id);
                   const s = layers[key];
                   const dotColor = lt.id === 'Binary' ? `#${cr.binaryColor}` : lt.color;
@@ -1105,9 +1126,9 @@ export default function App() {
             {!anyActive && <div className="auth-status hint">No layers active.</div>}
 
             {/* Gradient layers share one range across crops — shown once */}
-            {LAYER_TYPES
+            {ALL_LAYER_TYPES
               .filter(lt => lt.legendType === 'gradient'
-                && activeCrops.some(cid => layers[lkey(cid, lt.id)].enabled && !layers[lkey(cid, lt.id)].loading))
+                && activeCrops.some(cid => layers[lkey(cid, lt.id)]?.enabled && !layers[lkey(cid, lt.id)]?.loading))
               .map(lt => (
                 <div key={lt.id} className="legend-item">
                   <div className="legend-type-label" style={{ color: lt.color }}>{lt.label}</div>
@@ -1126,13 +1147,30 @@ export default function App() {
 
             {/* Swatch layers (binary) differ in colour per crop — shown per crop */}
             {CROPS.filter(cr => activeCrops.includes(cr.id)).flatMap(cr =>
-              LAYER_TYPES
+              cr.layerTypes
                 .filter(lt => lt.legendType === 'swatch'
                   && layers[lkey(cr.id, lt.id)].enabled && !layers[lkey(cr.id, lt.id)].loading)
                 .map(lt => (
                   <div key={lkey(cr.id, lt.id)} className="legend-item">
                     <div className="legend-type-label" style={{ color: `#${cr.binaryColor}` }}>{cr.label} · {lt.label}</div>
                     {layerLegendSwatches(lt, cr).map((sw, i) => (
+                      <div key={i} className="legend-swatch-row">
+                        <div className="legend-swatch" style={{ background: sw.color }} />
+                        <span className="legend-swatch-label">{sw.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                )))}
+
+            {/* Discrete layers (rice intensity) use fixed value→colour classes */}
+            {CROPS.filter(cr => activeCrops.includes(cr.id)).flatMap(cr =>
+              cr.layerTypes
+                .filter(lt => lt.legendType === 'discrete'
+                  && layers[lkey(cr.id, lt.id)].enabled && !layers[lkey(cr.id, lt.id)].loading)
+                .map(lt => (
+                  <div key={lkey(cr.id, lt.id)} className="legend-item">
+                    <div className="legend-type-label" style={{ color: lt.color }}>{cr.label} · {lt.label}</div>
+                    {lt.legendSwatches.map((sw, i) => (
                       <div key={i} className="legend-swatch-row">
                         <div className="legend-swatch" style={{ background: sw.color }} />
                         <span className="legend-swatch-label">{sw.label}</span>
@@ -1220,7 +1258,7 @@ export default function App() {
           gaulName={COUNTRIES.find(c => c.label === country)?.gaul ?? country}
           year={year}
           projectId={projectId}
-          crops={CROPS}
+          crops={CROPS.filter(cr => cr.layerTypes === STANDARD_LAYER_TYPES)}
           selectedTiles={selectedTiles}
           onSelectAllTiles={() => {
             const co = COUNTRIES.find(c => c.label === country);
