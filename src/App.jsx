@@ -51,13 +51,24 @@ const INTENSITY_LAYER_TYPES = [
   },
 ];
 
-const ALL_LAYER_TYPES = [...STANDARD_LAYER_TYPES, ...INTENSITY_LAYER_TYPES];
+// Oil Palm: a single binary asset per country/year (no Mean probability layer).
+const OIL_PALM_LAYER_TYPES = [
+  {
+    id: 'Binary', label: 'Binary', color: '#61afef',
+    assetName: (slug, year) => `oil_palm_binary_${slug}_${year}`,
+    isBinary: false, isSelfMask: true,
+    legendType: 'swatch',
+  },
+];
+
+const ALL_LAYER_TYPES = [...STANDARD_LAYER_TYPES, ...INTENSITY_LAYER_TYPES, ...OIL_PALM_LAYER_TYPES];
 
 // Crop types — each defines its own folder prefix and set of layer types.
 const CROPS = [
   { id: 'rice', label: 'Rice', prefix: 'projects/tony-1122/assets/NIE/rice/', binaryColor: '00ff00', layerTypes: STANDARD_LAYER_TYPES },
   { id: 'corn', label: 'Corn', prefix: 'projects/tony-1122/assets/NIE/corn/', binaryColor: 'ffff00', layerTypes: STANDARD_LAYER_TYPES },
   { id: 'rice_intensity', label: 'Rice Intensity', prefix: 'projects/tony-1122/assets/NIE/rice_intensity/', binaryColor: '00bcd4', layerTypes: INTENSITY_LAYER_TYPES },
+  { id: 'oil_palm', label: 'Oil Palm', prefix: 'projects/tony-1122/assets/NIE/oil_palm/', binaryColor: 'fdfd96', layerTypes: OIL_PALM_LAYER_TYPES },
 ];
 const CROP_BY_ID = Object.fromEntries(CROPS.map(c => [c.id, c]));
 // Composite key identifying a crop + layer type on the map and in layer state.
