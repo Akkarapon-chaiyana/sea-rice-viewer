@@ -61,7 +61,24 @@ const OIL_PALM_LAYER_TYPES = [
   },
 ];
 
-const ALL_LAYER_TYPES = [...STANDARD_LAYER_TYPES, ...INTENSITY_LAYER_TYPES, ...OIL_PALM_LAYER_TYPES];
+// Rice Yield: one multiband asset (b1..b6 = 2019..2024). 2025 is derived as the
+// mean of the 2023 and 2024 bands. Not split per country — clipped at request time.
+const YIELD_ASSET = 'sea_rice_yield_2019_2024';
+const YIELD_BASE_YEAR = 2019;
+const YIELD_LAST_BAND_YEAR = 2024;
+const YIELD_PALETTE = ['9400D3','4B0082','0000FF','00FF00','FFFF00','FF7F00','FF0000'];
+const YIELD_LAYER_TYPES = [
+  {
+    id: 'Yield', label: 'Rice Yield', color: '#ff7f00',
+    vis: { ranges: [{ min: 2.58, max: 6 }], paletteColors: YIELD_PALETTE },
+    assetName: () => YIELD_ASSET,
+    isBinary: false, isSelfMask: false, isYield: true,
+    legendType: 'gradient', legendLabel: 'Yield (t/ha)', legendMin: 2.58, legendMax: 6,
+    legendPalette: YIELD_PALETTE.map(c => `#${c}`),
+  },
+];
+
+const ALL_LAYER_TYPES = [...STANDARD_LAYER_TYPES, ...INTENSITY_LAYER_TYPES, ...OIL_PALM_LAYER_TYPES, ...YIELD_LAYER_TYPES];
 
 // Crop types — each defines its own folder prefix and set of layer types.
 const CROPS = [
@@ -69,6 +86,7 @@ const CROPS = [
   { id: 'corn', label: 'Corn', prefix: 'projects/tony-1122/assets/NIE/corn/', binaryColor: 'ffff00', layerTypes: STANDARD_LAYER_TYPES },
   { id: 'rice_intensity', label: 'Rice Intensity', prefix: 'projects/tony-1122/assets/NIE/rice_intensity/', binaryColor: '00bcd4', layerTypes: INTENSITY_LAYER_TYPES },
   { id: 'oil_palm', label: 'Oil Palm', prefix: 'projects/tony-1122/assets/NIE/oil_palm/', binaryColor: 'fdfd96', layerTypes: OIL_PALM_LAYER_TYPES },
+  { id: 'rice_yield', label: 'Rice Yield', prefix: 'projects/tony-1122/assets/NIE/rice_yield/', binaryColor: 'ff7f00', layerTypes: YIELD_LAYER_TYPES },
 ];
 const CROP_BY_ID = Object.fromEntries(CROPS.map(c => [c.id, c]));
 // Composite key identifying a crop + layer type on the map and in layer state.
@@ -254,15 +272,44 @@ function applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask) {
   return loadExpr;
 }
 
-function buildExpression(assetPath, gaulName, isBinary, isSelfMask, unmask) {
+// Yield image for a given year from the multiband asset (b1 = 2019 … b6 = 2024).
+// Years past the last band are the mean of the last two bands.
+function buildYieldImage(loadExpr, yearVal) {
+  const y = Number(yearVal);
+  const select = (band) => ({
+    functionInvocationValue: {
+      functionName: 'Image.select',
+      arguments: { input: loadExpr, bandSelectors: { arrayValue: { values: [{ constantValue: band }] } } },
+    },
+  });
+  if (y <= YIELD_LAST_BAND_YEAR) return select(`b${y - YIELD_BASE_YEAR + 1}`);
+  const n = YIELD_LAST_BAND_YEAR - YIELD_BASE_YEAR + 1;
+  return {
+    functionInvocationValue: {
+      functionName: 'Image.divide',
+      arguments: {
+        image1: {
+          functionInvocationValue: {
+            functionName: 'Image.add',
+            arguments: { image1: select(`b${n - 1}`), image2: select(`b${n}`) },
+          },
+        },
+        image2: { functionInvocationValue: { functionName: 'Image.constant', arguments: { value: { constantValue: 2 } } } },
+      },
+    },
+  };
+}
+
+// `geom` is a geometry/collection expression; `yieldYear` is set only for yield layers.
+function buildExpression(assetPath, geom, isBinary, isSelfMask, unmask, yieldYear) {
   const loadExpr = {
     functionInvocationValue: {
       functionName: 'Image.load',
       arguments: { id: { constantValue: assetPath } },
     },
   };
-  const imgExpr  = applyMaskToExpr(loadExpr, isBinary, isSelfMask);
-  const countryGeom = buildCountryFilter(gaulName);
+  const imgExpr  = yieldYear ? buildYieldImage(loadExpr, yieldYear) : applyMaskToExpr(loadExpr, isBinary, isSelfMask);
+  const countryGeom = geom;
 
   const clippedData = {
     functionInvocationValue: {
@@ -595,12 +642,12 @@ export default function App() {
 
     setLayers(prev => ({ ...prev, [key]: { ...prev[key], loading: true, error: null } }));
 
-    if (isAll) {
+    if (isAll && !lt.isYield) {
       try {
         const supported = COUNTRIES.filter(c => c.years.length > 0);
         const results = await Promise.all(supported.map(async co => {
           try {
-            const expr = buildExpression(assetId(crop, lt, co.slug, yearVal), co.gaul, lt.isBinary, lt.isSelfMask, lt.unmask);
+            const expr = buildExpression(assetId(crop, lt, co.slug, yearVal), buildCountryFilter(co.gaul), lt.isBinary, lt.isSelfMask, lt.unmask);
             const tileUrl = await fetchGEETileUrl(expr, vis);
             return { slug: co.slug, tileUrl };
           } catch (err) {
@@ -641,7 +688,11 @@ export default function App() {
 
     try {
       const tileUrl  = await fetchGEETileUrl(
-        buildExpression(assetId(crop, lt, countryObj.slug, yearVal), countryObj.gaul, lt.isBinary, lt.isSelfMask, lt.unmask),
+        buildExpression(
+          assetId(crop, lt, countryObj?.slug, yearVal),
+          isAll ? buildSEAFilter() : buildCountryFilter(countryObj.gaul),
+          lt.isBinary, lt.isSelfMask, lt.unmask,
+          lt.isYield ? yearVal : null),
         vis,
       );
       const sourceId = `gee-${key}`;
@@ -666,7 +717,7 @@ export default function App() {
         setProjectError('Project ID rejected — check your project ID correctly before sign in.');
         friendly = 'Check the Project ID above.';
       } else if (msg.includes('not found') || msg.includes('does not exist')) {
-        friendly = `${countryObj.label} is not included in the analysis.`;
+        friendly = `${countryObj?.label ?? 'This region'} is not included in the analysis.`;
       } else {
         friendly = err.message;
       }
