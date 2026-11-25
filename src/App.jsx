@@ -74,7 +74,7 @@ const YIELD_LAYER_TYPES = [
     assetName: () => YIELD_ASSET,
     isBinary: false, isSelfMask: false, isYield: true,
     legendType: 'gradient', legendLabel: 'Yield (t/ha)', legendMin: 2.58, legendMax: 6,
-    legendTicks: [2.58, 3, 3.5, 4, 4.5, 5, 5.5, 6],
+    legendStops: true,
     legendPalette: YIELD_PALETTE.map(c => `#${c}`),
   },
 ];
@@ -1195,23 +1195,23 @@ export default function App() {
               .map(lt => (
                 <div key={lt.id} className="legend-item">
                   <div className="legend-type-label" style={{ color: lt.color }}>{lt.label}</div>
-                  {lt.legendTicks ? (() => {
-                    const pct = v => ((v - lt.legendMin) / (lt.legendMax - lt.legendMin)) * 100;
+                  {lt.legendStops ? (() => {
+                    // One block per palette colour, labelled with the yield value where that colour is reached.
+                    const n = lt.legendPalette.length;
+                    const val = k => (lt.legendMin + k * (lt.legendMax - lt.legendMin) / (n - 1)).toFixed(2);
                     return (
                       <>
-                        <div style={{ height: 12, borderRadius: 2,
-                          background: `linear-gradient(to right, ${lt.legendPalette.join(',')})` }} />
-                        <div style={{ position: 'relative', height: 22, marginTop: 1 }}>
-                          {lt.legendTicks.map((v, i) => (
-                            <div key={v} style={{ position: 'absolute', left: `${pct(v)}%`,
-                              transform: i === 0 ? 'none' : i === lt.legendTicks.length - 1 ? 'translateX(-100%)' : 'translateX(-50%)',
-                              textAlign: i === 0 ? 'left' : i === lt.legendTicks.length - 1 ? 'right' : 'center' }}>
-                              <div style={{ width: 1, height: 4, background: '#aaaacc', margin: i === 0 ? '0' : i === lt.legendTicks.length - 1 ? '0 0 0 auto' : '0 auto' }} />
-                              <span style={{ fontSize: 9, color: '#c8cce8' }}>{v}</span>
-                            </div>
+                        <div className="legend-gradient">
+                          {lt.legendPalette.map((c, k) => (
+                            <div key={k} className="legend-gradient-seg" style={{ background: c }} />
                           ))}
                         </div>
-                        <div style={{ fontSize: 9, color: '#aaaacc', textAlign: 'center' }}>
+                        <div style={{ display: 'flex', marginTop: 2 }}>
+                          {lt.legendPalette.map((_c, k) => (
+                            <span key={k} style={{ flex: 1, textAlign: 'center', fontSize: 9, color: '#c8cce8' }}>{val(k)}</span>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 9, color: '#aaaacc', textAlign: 'center', marginTop: 2 }}>
                           {lt.legendLabel} · low → high
                         </div>
                       </>
