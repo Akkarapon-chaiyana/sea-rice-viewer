@@ -118,7 +118,7 @@ const COUNTRIES = [
   { label: 'Taiwan',      slug: 'taiwan',      iso: 'TWN', gaul: 'Taiwan',                           center: [121.0,  23.7], zoom: 7,  bbox: [120.0, 21.8, 122.1, 25.4], years: ['2026'], eastAsia: true },
 ];
 
-const SEA_GAUL_NAMES = COUNTRIES.filter(c => !c.eastAsia).map(c => c.gaul);
+const BOUNDARY_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
 
 const YEARS = ['2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026'];
 
@@ -201,7 +201,7 @@ function buildCountryFilter(gaulName) {
   };
 }
 
-function buildSEAFilter() {
+function buildAllCountriesFilter() {
   // Filter.or with individual Filter.eq per country — avoids Filter.inList uncertainty
   return {
     functionInvocationValue: {
@@ -214,7 +214,7 @@ function buildSEAFilter() {
             arguments: {
               filters: {
                 arrayValue: {
-                  values: SEA_GAUL_NAMES.map(name => ({
+                  values: BOUNDARY_GAUL_NAMES.map(name => ({
                     functionInvocationValue: {
                       functionName: 'Filter.eq',
                       arguments: {
@@ -519,13 +519,13 @@ export default function App() {
     }
   }, [fetchGEETileUrl, addRasterLayer]);
 
-  // ── Load SEA boundaries from FAO GAUL (outline only, cyan) ───────────────
+  // ── Load all country boundaries from FAO GAUL (outline only, cyan) ───────────────
   const loadSEABoundary = useCallback(async () => {
     const map = mapRef.current;
     if (!map || !tokenRef.current || !projectRef.current) return;
     try {
       const tileUrl = await fetchGEETileUrl(
-        buildBoundaryExpression(buildSEAFilter(), 1),
+        buildBoundaryExpression(buildAllCountriesFilter(), 1),
         { ranges: [{ min: 1, max: 1 }], paletteColors: ['00ffff'] }
       );
       boundaryTilesRef.current.sea = tileUrl;
@@ -751,7 +751,7 @@ export default function App() {
       const tileUrl  = await fetchGEETileUrl(
         buildExpression(
           assetId(crop, lt, countryObj?.slug, yearVal),
-          isAll ? buildSEAFilter() : buildCountryFilter(countryObj.gaul),
+          isAll ? buildAllCountriesFilter() : buildCountryFilter(countryObj.gaul),
           lt.isBinary, lt.isSelfMask, lt.unmask,
           lt.isYield ? yearVal : null, band),
         vis,
@@ -1213,7 +1213,7 @@ export default function App() {
               <input type="checkbox" checked={seaOn}
                 disabled={!canLoad}
                 onChange={e => handleSea(e.target.checked)} />
-              <span className="checkbox-label">SEA country boundaries</span>
+              <span className="checkbox-label">Country boundaries</span>
             </label>
             <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 20, height: 2, background: '#bf40ff', display: 'inline-block', borderRadius: 1 }} />
@@ -1222,7 +1222,7 @@ export default function App() {
             {seaOn && (
               <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ width: 20, height: 2, background: '#00ffff', display: 'inline-block', borderRadius: 1 }} />
-                <span className="legend-swatch-label">SEA boundaries</span>
+                <span className="legend-swatch-label">Country boundaries</span>
               </div>
             )}
           </div>
