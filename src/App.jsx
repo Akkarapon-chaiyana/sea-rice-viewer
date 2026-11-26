@@ -7,16 +7,16 @@ import { cellBbox, generateCellsForBbox, CELL_DEG } from './utils/gridTiles';
 // ── Constants ────────────────────────────────────────────────────────────────
 // `assetName` returns the file name only; the crop's folder prefix is prepended
 // at load time so the same layer type works for any crop.
-// Mean/Binary crops share the same asset structure (SEA_Avg_/SEA_binary_<slug>_<year>).
+// Rice and corn share the same asset structure (SEA_Avg_/SEA_binary_<slug>_<year>).
 const STANDARD_LAYER_TYPES = [
-  {
-    id: 'Mean', label: '5-Fold Ensemble Probability', color: '#e06c75',
-    vis: { ranges: [{ min: 0, max: 100 }], paletteColors: ['ffffff','ffff00','ffa500','ff0000','800080'] },
-    assetName: (slug, year) => `SEA_Avg_${slug}_${year}`,
-    isBinary: false, unmask: true,
-    legendType: 'gradient', legendLabel: 'Probability (%)', legendMin: 0, legendMax: 100,
-    legendPalette: ['#ffffff','#ffff00','#ffa500','#ff0000','#800080'],
-  },
+  // {
+  //  id: 'Mean', label: '5-Fold Ensemble Probability', color: '#e06c75',
+  //  vis: { ranges: [{ min: 0, max: 100 }], paletteColors: ['ffffff','ffff00','ffa500','ff0000','800080'] },
+  //  assetName: (slug, year) => `SEA_Avg_${slug}_${year}`,
+  //  isBinary: false, unmask: true,
+  //  legendType: 'gradient', legendLabel: 'Probability (%)', legendMin: 0, legendMax: 100,
+  //  legendPalette: ['#ffffff','#ffff00','#ffa500','#ff0000','#800080'],
+  // },  // disabled
   // {
   //   id: 'Std', label: 'Standard Deviation', color: '#e5c07b',
   //   vis: { ranges: [{ min: 0, max: 45 }], paletteColors: ['ffffff','ffff00','ffa500','ff0000','800080'] },
@@ -79,6 +79,12 @@ const YIELD_LAYER_TYPES = [
   },
 ];
 
+// Rice 2026 (East Asia, k-means method): one multiband asset per country,
+// with the rice mask (0/1) in band b4.
+const RICE_KMEANS_YEAR = '2026';
+const RICE_KMEANS_PREFIX = 'projects/tony-1122/assets/NIE/rice_kmeans_method/';
+const RICE_KMEANS_BAND = 'b4';
+
 const ALL_LAYER_TYPES = [...STANDARD_LAYER_TYPES, ...INTENSITY_LAYER_TYPES, ...OIL_PALM_LAYER_TYPES, ...YIELD_LAYER_TYPES];
 
 // Crop types — each defines its own folder prefix and set of layer types.
@@ -105,14 +111,27 @@ const COUNTRIES = [
   { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                center: [114.7,   4.5], zoom: 8,  bbox: [114.1,  4.0, 115.4,  5.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
   { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8,  bbox: [124.0, -9.5, 127.4, -8.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
   { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10, bbox: [103.6,  1.1, 104.1,  1.5], years: [] },
+  // East Asia — rice only, 2026
+  { label: 'Japan',       slug: 'japan',       iso: 'JPN', gaul: 'Japan',                            center: [137.0,  37.5], zoom: 5,  bbox: [128.2, 30.4, 146.0, 45.6], years: ['2026'], eastAsia: true },
+  { label: 'South Korea', slug: 'south_korea', iso: 'KOR', gaul: 'Republic of Korea',                center: [127.8,  36.0], zoom: 6,  bbox: [125.5, 33.9, 129.8, 38.7], years: ['2026'], eastAsia: true },
+  { label: 'North Korea', slug: 'north_korea', iso: 'PRK', gaul: "Dem People's Rep of Korea",        center: [127.2,  40.0], zoom: 6,  bbox: [124.1, 37.5, 130.9, 43.1], years: ['2026'], eastAsia: true },
+  { label: 'Taiwan',      slug: 'taiwan',      iso: 'TWN', gaul: 'Taiwan',                           center: [121.0,  23.7], zoom: 7,  bbox: [120.0, 21.8, 122.1, 25.4], years: ['2026'], eastAsia: true },
 ];
 
-const SEA_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
+const SEA_GAUL_NAMES = COUNTRIES.filter(c => !c.eastAsia).map(c => c.gaul);
 
-const YEARS = ['2019', '2020', '2021', '2022', '2023', '2024', '2025'];
+const YEARS = ['2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026'];
+
+const isRiceKmeans = (cropId, year) => cropId === 'rice' && year === RICE_KMEANS_YEAR;
+
+// 2026 data exists for rice only.
+const hasData = (cropId, co, year) =>
+  co.years.includes(year) && (year !== RICE_KMEANS_YEAR || cropId === 'rice');
 
 // Full asset id for a crop + layer type.
-const assetId = (crop, lt, slug, year) => `${crop.prefix}${lt.assetName(slug, year)}`;
+const assetId = (crop, lt, slug, year) => isRiceKmeans(crop.id, year)
+  ? `${RICE_KMEANS_PREFIX}rice_${slug}_${year}`
+  : `${crop.prefix}${lt.assetName(slug, year)}`;
 
 // Crop-aware visualisation — the binary layer is coloured per crop
 // (rice → green, corn → yellow); other layers share one palette.
@@ -125,9 +144,10 @@ function layerVis(lt, crop) {
 
 // Crop-aware legend swatches for the binary layer.
 // Only the "crop present" class is shown; the masked / non-crop class is omitted.
-function layerLegendSwatches(lt, crop) {
+function layerLegendSwatches(lt, crop, year) {
+  const label = isRiceKmeans(crop.id, year) ? crop.label : `${crop.label} (prob ≥ 50%)`;
   return [
-    { color: `#${crop.binaryColor}`, label: `${crop.label} (prob ≥ 50%)` },
+    { color: `#${crop.binaryColor}`, label },
   ];
 }
 
@@ -301,15 +321,27 @@ function buildYieldImage(loadExpr, yearVal) {
   };
 }
 
-// `geom` is a geometry/collection expression; `yieldYear` is set only for yield layers.
-function buildExpression(assetPath, geom, isBinary, isSelfMask, unmask, yieldYear) {
+function selectBand(imageExpr, band) {
+  return {
+    functionInvocationValue: {
+      functionName: 'Image.select',
+      arguments: { input: imageExpr, bandSelectors: { arrayValue: { values: [{ constantValue: band }] } } },
+    },
+  };
+}
+
+// `geom` is a geometry/collection expression; `yieldYear` is set only for yield layers,
+// `band` only for multiband assets that need a single band picked.
+function buildExpression(assetPath, geom, isBinary, isSelfMask, unmask, yieldYear, band) {
   const loadExpr = {
     functionInvocationValue: {
       functionName: 'Image.load',
       arguments: { id: { constantValue: assetPath } },
     },
   };
-  const imgExpr  = yieldYear ? buildYieldImage(loadExpr, yieldYear) : applyMaskToExpr(loadExpr, isBinary, isSelfMask);
+  const imgExpr  = yieldYear
+    ? buildYieldImage(loadExpr, yieldYear)
+    : applyMaskToExpr(band ? selectBand(loadExpr, band) : loadExpr, isBinary, isSelfMask);
   const countryGeom = geom;
 
   const clippedData = {
@@ -628,6 +660,22 @@ export default function App() {
     client.requestAccessToken({ prompt: '' });
   }, [loadCountryBoundary, loadSEABoundary]);
 
+  // ── Remove a layer from map ───────────────────────────────────────────────
+  const removeLayerFromMap = useCallback((cropId, typeId) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const key = lkey(cropId, typeId);
+    // Remove single-country layer
+    if (map.getLayer(`gee-layer-${key}`)) map.removeLayer(`gee-layer-${key}`);
+    if (map.getSource(`gee-${key}`))      map.removeSource(`gee-${key}`);
+    // Remove per-country sub-layers (All countries mode)
+    const slugs = (layersRef.current[key]?.allLayers ?? []).map(l => l.slug);
+    slugs.forEach(slug => {
+      if (map.getLayer(`gee-layer-${key}-${slug}`)) map.removeLayer(`gee-layer-${key}-${slug}`);
+      if (map.getSource(`gee-${key}-${slug}`))      map.removeSource(`gee-${key}-${slug}`);
+    });
+  }, []);
+
   // ── Load a single GEE layer (for one crop + layer type) ───────────────────
   const loadLayer = useCallback(async (cropId, typeId, countryVal, yearVal) => {
     const map = mapRef.current;
@@ -640,15 +688,27 @@ export default function App() {
     const countryObj = isAll ? null : COUNTRIES.find(c => c.label === countryVal);
     if (!crop || !lt || (!isAll && !countryObj)) return;
     const vis = layerVis(lt, crop);
+    const band = isRiceKmeans(cropId, yearVal) ? RICE_KMEANS_BAND : null;
+
+    // Skip requests for crop/country/year combinations with no data (this also stops
+    // the yield layer from deriving a 2026 value from earlier bands).
+    const supported = (isAll ? COUNTRIES : [countryObj]).filter(c => hasData(cropId, c, yearVal));
+    if (supported.length === 0 && (yearVal === RICE_KMEANS_YEAR || countryObj?.eastAsia)) {
+      removeLayerFromMap(cropId, typeId);
+      const next = { ...layersRef.current[key], loading: false, tileUrl: null, allLayers: undefined,
+        error: `${crop.label} is not available for ${isAll ? '' : `${countryObj.label} `}${yearVal}.` };
+      layersRef.current = { ...layersRef.current, [key]: next };
+      setLayers(prev => ({ ...prev, [key]: next }));
+      return;
+    }
 
     setLayers(prev => ({ ...prev, [key]: { ...prev[key], loading: true, error: null } }));
 
     if (isAll && !lt.isYield) {
       try {
-        const supported = COUNTRIES.filter(c => c.years.length > 0);
         const results = await Promise.all(supported.map(async co => {
           try {
-            const expr = buildExpression(assetId(crop, lt, co.slug, yearVal), buildCountryFilter(co.gaul), lt.isBinary, lt.isSelfMask, lt.unmask);
+            const expr = buildExpression(assetId(crop, lt, co.slug, yearVal), buildCountryFilter(co.gaul), lt.isBinary, lt.isSelfMask, lt.unmask, null, band);
             const tileUrl = await fetchGEETileUrl(expr, vis);
             return { slug: co.slug, tileUrl };
           } catch (err) {
@@ -693,7 +753,7 @@ export default function App() {
           assetId(crop, lt, countryObj?.slug, yearVal),
           isAll ? buildSEAFilter() : buildCountryFilter(countryObj.gaul),
           lt.isBinary, lt.isSelfMask, lt.unmask,
-          lt.isYield ? yearVal : null),
+          lt.isYield ? yearVal : null, band),
         vis,
       );
       const sourceId = `gee-${key}`;
@@ -726,23 +786,7 @@ export default function App() {
       layersRef.current = { ...layersRef.current, [key]: next };
       setLayers(prev => ({ ...prev, [key]: next }));
     }
-  }, [fetchGEETileUrl, addRasterLayer]);
-
-  // ── Remove a layer from map ───────────────────────────────────────────────
-  const removeLayerFromMap = useCallback((cropId, typeId) => {
-    const map = mapRef.current;
-    if (!map) return;
-    const key = lkey(cropId, typeId);
-    // Remove single-country layer
-    if (map.getLayer(`gee-layer-${key}`)) map.removeLayer(`gee-layer-${key}`);
-    if (map.getSource(`gee-${key}`))      map.removeSource(`gee-${key}`);
-    // Remove per-country sub-layers (All countries mode)
-    const slugs = (layersRef.current[key]?.allLayers ?? []).map(l => l.slug);
-    slugs.forEach(slug => {
-      if (map.getLayer(`gee-layer-${key}-${slug}`)) map.removeLayer(`gee-layer-${key}-${slug}`);
-      if (map.getSource(`gee-${key}-${slug}`))      map.removeSource(`gee-${key}-${slug}`);
-    });
-  }, []);
+  }, [fetchGEETileUrl, addRasterLayer, removeLayerFromMap]);
 
   // ── Toggle checkbox ───────────────────────────────────────────────────────
   const handleLayerToggle = useCallback((cropId, typeId, checked) => {
@@ -1241,7 +1285,7 @@ export default function App() {
                 .map(lt => (
                   <div key={lkey(cr.id, lt.id)} className="legend-item">
                     <div className="legend-type-label" style={{ color: `#${cr.binaryColor}` }}>{cr.label} · {lt.label}</div>
-                    {layerLegendSwatches(lt, cr).map((sw, i) => (
+                    {layerLegendSwatches(lt, cr, year).map((sw, i) => (
                       <div key={i} className="legend-swatch-row">
                         <div className="legend-swatch" style={{ background: sw.color }} />
                         <span className="legend-swatch-label">{sw.label}</span>

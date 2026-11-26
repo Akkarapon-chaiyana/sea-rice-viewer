@@ -80,7 +80,7 @@ Once the project is ready, paste the **Project ID** into the app's Authenticatio
 2. Click **Sign In with Google** — authorise with the account that has GEE access.
 3. Tick one or more **Crop Type**s (**Rice** and/or **Corn**) below the Basemap selector.
 4. Select a **Country** (including **All countries**) and **Year**.
-5. Toggle **Map Layers** to visualise crop probability on the map (5-Fold Ensemble Probability and Binary are currently available). Layers are listed per selected crop, so Rice and Corn can be shown at the same time.
+5. Toggle **Map Layers** to visualise crops on the map (Rice and Corn currently offer the Binary layer). Layers are listed per selected crop, so Rice and Corn can be shown at the same time.
 6. Use the **Export** button to generate a ready-to-run Python download script.
 
 ---
@@ -95,6 +95,9 @@ that shares the same file structure (`SEA_Avg_<slug>_<year>`, `SEA_binary_<slug>
 | Rice | `projects/tony-1122/assets/NIE/rice/` | Green |
 | Corn | `projects/tony-1122/assets/NIE/corn/` | Yellow |
 
+Rice for 2026 covers Japan, South Korea, North Korea, and Taiwan. These come from
+`projects/tony-1122/assets/NIE/rice_kmeans_method/rice_<slug>_2026` (band `b4`).
+
 Tick one or more crops in the **Crop Type** panel. Selecting several shows their
 layers simultaneously; the binary layer is coloured per crop so overlapping crops
 stay distinguishable. Unticking a crop removes its layers from the map.
@@ -107,7 +110,7 @@ The **Export GeoTIFF (Python)** panel generates a script through a sequential wi
 
 | Step | Description |
 |---|---|
-| **1 — Layers to export** | Select one or more output layers (5-Fold Mean Probability, Binary) |
+| **1 — Layers to export** | Select one or more output layers (Binary) |
 | **2 — Resolution** | Choose pixel size: 10 / 30 / 100 / 250 / 1000 m |
 | **3 — Export area** | Whole country or custom grid tiles |
 | **4 — Export destination** | Google Drive or Local Download |
