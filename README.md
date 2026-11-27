@@ -95,8 +95,10 @@ that shares the same file structure (`SEA_Avg_<slug>_<year>`, `SEA_binary_<slug>
 | Rice | `projects/tony-1122/assets/NIE/rice/` | Green |
 | Corn | `projects/tony-1122/assets/NIE/corn/` | Yellow |
 
-Rice for 2026 covers Japan, South Korea, North Korea, and Taiwan. These come from
-`projects/tony-1122/assets/NIE/rice_kmeans_method/rice_<slug>_2026` (band `b4`).
+Rice for 2026 covers Thailand, Japan, South Korea, North Korea, and Taiwan. These come
+from `projects/tony-1122/assets/NIE/rice_kmeans_method/rice_<slug>_2026`: band `b4` for
+the East Asian countries, and band `intensity` (rice = `intensity > 0`) for Thailand.
+Rice Intensity for 2026 is available for Thailand only.
 
 Tick one or more crops in the **Crop Type** panel. Selecting several shows their
 layers simultaneously; the binary layer is coloured per crop so overlapping crops
