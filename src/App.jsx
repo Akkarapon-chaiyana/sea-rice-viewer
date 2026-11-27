@@ -120,31 +120,13 @@ const COUNTRIES = [
   { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8,  bbox: [124.0, -9.5, 127.4, -8.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
   { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10, bbox: [103.6,  1.1, 104.1,  1.5], years: [] },
   // East Asia — rice and rice intensity (single crop cycle) only, all from k-means
-  { label: 'Japan',       slug: 'japan',       iso: 'JPN', gaul: 'Japan',                            center: [137.0,  37.5], zoom: 5,  bbox: [128.2, 30.4, 146.0, 45.6], years: YEARS, eastAsia: true, tileBounds: [122.5, 23.5, 154.5, 46.5] },
+  { label: 'Japan',       slug: 'japan',       iso: 'JPN', gaul: 'Japan',                            center: [137.0,  37.5], zoom: 5,  bbox: [128.2, 30.4, 146.0, 45.6], years: YEARS, eastAsia: true },
   { label: 'South Korea', slug: 'south_korea', iso: 'KOR', gaul: 'Republic of Korea',                center: [127.8,  36.0], zoom: 6,  bbox: [125.5, 33.9, 129.8, 38.7], years: YEARS, eastAsia: true },
   { label: 'North Korea', slug: 'north_korea', iso: 'PRK', gaul: "Dem People's Rep of Korea",        center: [127.2,  40.0], zoom: 6,  bbox: [124.1, 37.5, 130.9, 43.1], years: YEARS, eastAsia: true },
-  { label: 'Taiwan',      slug: 'taiwan',      iso: 'TWN', gaul: 'Taiwan',                           center: [121.0,  23.7], zoom: 7,  bbox: [120.0, 21.8, 122.1, 25.4], years: YEARS, eastAsia: true, tileBounds: [118.0, 20.5, 123.5, 26.8] },
+  { label: 'Taiwan',      slug: 'taiwan',      iso: 'TWN', gaul: 'Taiwan',                           center: [121.0,  23.7], zoom: 7,  bbox: [120.0, 21.8, 122.1, 25.4], years: YEARS, eastAsia: true },
 ];
 
 const BOUNDARY_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
-
-// Longest time "All countries" layers stay hidden while waiting for slow tiles.
-const REVEAL_TIMEOUT_MS = 30000;
-
-// Area a country's tiles are requested for in "All countries" mode: its bbox plus a
-// 1° margin, unless `tileBounds` is set for outlying islands the bbox leaves out.
-const tileBoundsFor = ({ tileBounds, bbox: [w, s, e, n] }) =>
-  tileBounds ?? [w - 1, s - 1, e + 1, n + 1];
-
-// Resolves once the map has no tiles left to load, or after the time limit.
-function waitForMapIdle(map) {
-  return new Promise(resolve => {
-    const done = () => { clearTimeout(timer); map.off('idle', done); resolve(); };
-    const timer = setTimeout(done, REVEAL_TIMEOUT_MS);
-    map.on('idle', done);
-    map.triggerRepaint();
-  });
-}
 
 const isRiceCrop = (cropId) => cropId === 'rice' || cropId === 'rice_intensity';
 
@@ -439,16 +421,25 @@ function buildExpression(assetPath, geom, isBinary, isSelfMask, unmask, yieldYea
   return { result: '0', values: { '0': clippedData } };
 }
 
-function buildMosaicExpression(crop, lt, yearVal, isBinary, isSelfMask, unmask) {
-  const supported = COUNTRIES.filter(c => c.years.length > 0);
-  const images = supported.map(co => {
-    const loadExpr = {
-      functionInvocationValue: {
-        functionName: 'Image.load',
-        arguments: { id: { constantValue: assetId(crop, lt, co, yearVal) } },
+// Merges per-country expressions (from `buildExpression`) into one image. Assets
+// name their bands differently, so each is reduced to one byte band called `v`.
+function buildMosaicExpression(expressions) {
+  const normalise = (expr) => ({
+    functionInvocationValue: {
+      functionName: 'Image.toByte',
+      arguments: {
+        value: {
+          functionInvocationValue: {
+            functionName: 'Image.select',
+            arguments: {
+              input: expr.values[expr.result],
+              bandSelectors: { arrayValue: { values: [{ constantValue: 0 }] } },
+              newNames: { arrayValue: { values: [{ constantValue: 'v' }] } },
+            },
+          },
+        },
       },
-    };
-    return applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask);
+    },
   });
   return {
     result: '0',
@@ -460,7 +451,7 @@ function buildMosaicExpression(crop, lt, yearVal, isBinary, isSelfMask, unmask) 
             collection: {
               functionInvocationValue: {
                 functionName: 'ImageCollection.fromImages',
-                arguments: { images: { arrayValue: { values: images } } },
+                arguments: { images: { arrayValue: { values: expressions.map(normalise) } } },
               },
             },
           },
@@ -545,12 +536,32 @@ export default function App() {
     return `${GEE_API}/${name}/tiles/{z}/{x}/{y}`;
   }, []);
 
+  // ── Can this asset be used in a mosaic? ───────────────────────────────────
+  // One unusable asset breaks the whole mosaic, so each is checked first.
+  const isAssetUsable = useCallback(async (path, band) => {
+    const res = await fetch(`${GEE_API}/${path}`, {
+      headers: {
+        Authorization:      `Bearer ${tokenRef.current}`,
+        'x-goog-user-project': projectRef.current,
+      },
+    });
+    if (res.ok) {
+      const { bands } = await res.json();
+      return !band || !bands || bands.some(b => b.id === band);
+    }
+    const message = (await res.json().catch(() => ({}))).error?.message || `HTTP ${res.status}`;
+    const msg = message.toLowerCase();
+    // Only skip missing assets — report auth/project errors
+    if (res.status === 404 || msg.includes('not found') || msg.includes('does not exist')
+        || msg.includes('asset')) return false;
+    throw new Error(message);
+  }, []);
+
   // ── Add a raster tile layer to the map ───────────────────────────────────
-  const addRasterLayer = useCallback((map, sourceId, layerId, tileUrl, opacity = 1, bounds) => {
+  const addRasterLayer = useCallback((map, sourceId, layerId, tileUrl, opacity = 1) => {
     if (map.getLayer(layerId))   map.removeLayer(layerId);
     if (map.getSource(sourceId)) map.removeSource(sourceId);
-    map.addSource(sourceId, { type: 'raster', tiles: [tileUrl], tileSize: 256,
-      ...(bounds && { bounds }) });
+    map.addSource(sourceId, { type: 'raster', tiles: [tileUrl], tileSize: 256 });
     map.addLayer({ id: layerId, type: 'raster', source: sourceId,
       paint: { 'raster-opacity': opacity } });
   }, []);
@@ -632,14 +643,6 @@ export default function App() {
           map.addLayer({ id: `gee-layer-${key}`, type: 'raster', source: `gee-${key}`,
             paint: { 'raster-opacity': s.enabled ? s.opacity : 0 } });
         }
-        // Restore per-country sub-layers (All countries mode)
-        (s.allLayers ?? []).forEach(({ slug, tileUrl, bounds }) => {
-          const srcId = `gee-${key}-${slug}`;
-          const lyrId = `gee-layer-${key}-${slug}`;
-          map.addSource(srcId, { type: 'raster', tiles: [tileUrl], tileSize: 256, bounds });
-          map.addLayer({ id: lyrId, type: 'raster', source: srcId,
-            paint: { 'raster-opacity': s.enabled && !s.hidden ? s.opacity : 0 } });
-        });
       }));
       // Restore boundaries
       const { country: cUrl, sea: sUrl } = boundaryTilesRef.current;
@@ -726,15 +729,8 @@ export default function App() {
     if (!map) return;
     const key = lkey(cropId, typeId);
     layerReqRef.current[key] = (layerReqRef.current[key] ?? 0) + 1;  // cancel any pending load
-    // Remove single-country layer
     if (map.getLayer(`gee-layer-${key}`)) map.removeLayer(`gee-layer-${key}`);
     if (map.getSource(`gee-${key}`))      map.removeSource(`gee-${key}`);
-    // Remove per-country sub-layers (All countries mode)
-    const slugs = (layersRef.current[key]?.allLayers ?? []).map(l => l.slug);
-    slugs.forEach(slug => {
-      if (map.getLayer(`gee-layer-${key}-${slug}`)) map.removeLayer(`gee-layer-${key}-${slug}`);
-      if (map.getSource(`gee-${key}-${slug}`))      map.removeSource(`gee-${key}-${slug}`);
-    });
   }, []);
 
   // ── Load a single GEE layer (for one crop + layer type) ───────────────────
@@ -755,7 +751,7 @@ export default function App() {
     const supported = (isAll ? COUNTRIES : [countryObj]).filter(c => hasData(cropId, c, yearVal));
     if (supported.length === 0 && (yearVal === RICE_KMEANS_YEAR || countryObj?.eastAsia)) {
       removeLayerFromMap(cropId, typeId);
-      const next = { ...layersRef.current[key], loading: false, tileUrl: null, allLayers: undefined,
+      const next = { ...layersRef.current[key], loading: false, tileUrl: null,
         error: `${crop.label} is not available for ${isAll ? '' : `${countryObj.label} `}${yearVal}.` };
       layersRef.current = { ...layersRef.current, [key]: next };
       setLayers(prev => ({ ...prev, [key]: next }));
@@ -768,70 +764,29 @@ export default function App() {
 
     setLayers(prev => ({ ...prev, [key]: { ...prev[key], loading: true, error: null } }));
 
-    if (isAll && !lt.isYield) {
-      try {
-        const results = await Promise.all(supported.map(async co => {
-          try {
-            const expr = buildExpression(assetId(crop, lt, co, yearVal), buildCountryFilter(co.gaul), lt.isBinary, lt.isSelfMask, lt.unmask, null,
-              kmeansSource(cropId, co, yearVal));
-            const tileUrl = await fetchGEETileUrl(expr, layerVis(lt, crop, co, yearVal));
-            return { slug: co.slug, tileUrl, bounds: tileBoundsFor(co) };
-          } catch (err) {
-            const msg = err.message?.toLowerCase() ?? '';
-            // Only skip missing assets — re-throw auth/project/expression errors
-            if (msg.includes('not found') || msg.includes('does not exist') || msg.includes('asset')) return null;
-            throw err;
-          }
-        }));
-        if (isStale()) return;
-        const loaded = results.filter(Boolean);
-        // Add every country hidden, then reveal them together once tiles are in
-        loaded.forEach(({ slug, tileUrl, bounds }) => {
-          addRasterLayer(map, `gee-${key}-${slug}`, `gee-layer-${key}-${slug}`, tileUrl, 0, bounds);
-        });
-        ['boundary-layer-sea', 'boundary-layer-country'].forEach(id => {
-          if (map.getLayer(id)) map.moveLayer(id);
-        });
-        layersRef.current = { ...layersRef.current,
-          [key]: { ...layersRef.current[key], allLayers: loaded, hidden: true } };
-        if (loaded.length) await waitForMapIdle(map);
-        if (isStale()) return;
-        const { opacity } = layersRef.current[key];
-        loaded.forEach(({ slug }) => {
-          const id = `gee-layer-${key}-${slug}`;
-          if (map.getLayer(id)) map.setPaintProperty(id, 'raster-opacity', opacity);
-        });
-        const next = { enabled: true, opacity, loading: false, error: null, mapName: null, tileUrl: null,
-          allLayers: loaded };
-        layersRef.current = { ...layersRef.current, [key]: next };
-        setLayers(prev => ({ ...prev, [key]: next }));
-      } catch (err) {
-        if (isStale()) return;
-        const msg = err.message?.toLowerCase() ?? '';
-        let friendly;
-        if (msg.includes('permission') || msg.includes('serviceusage') || msg.includes('caller does not have')
-            || (msg.includes('project') && msg.includes('not found'))) {
-          setProjectError('Project ID rejected — check your project ID correctly before sign in.');
-          friendly = 'Check the Project ID above.';
-        } else {
-          friendly = err.message;
-        }
-        const next = { ...layersRef.current[key], loading: false, error: friendly };
-        layersRef.current = { ...layersRef.current, [key]: next };
-        setLayers(prev => ({ ...prev, [key]: next }));
-      }
-      return;
-    }
-
     try {
-      const tileUrl  = await fetchGEETileUrl(
-        buildExpression(
-          assetId(crop, lt, countryObj, yearVal),
-          isAll ? buildAllCountriesFilter() : buildCountryFilter(countryObj.gaul),
-          lt.isBinary, lt.isSelfMask, lt.unmask,
-          lt.isYield ? yearVal : null, kmeansSource(cropId, countryObj, yearVal)),
-        vis,
-      );
+      const countryExpr = (co) => buildExpression(
+        assetId(crop, lt, co, yearVal),
+        co ? buildCountryFilter(co.gaul) : buildAllCountriesFilter(),
+        lt.isBinary, lt.isSelfMask, lt.unmask,
+        lt.isYield ? yearVal : null, kmeansSource(cropId, co, yearVal));
+      let expression;
+      let note = null;
+      if (isAll && !lt.isYield) {
+        // All countries: one server-side mosaic of every country with a usable asset
+        const usable = await Promise.all(supported.map(co =>
+          isAssetUsable(assetId(crop, lt, co, yearVal), kmeansSource(cropId, co, yearVal)?.band)));
+        const included = supported.filter((_, i) => usable[i]);
+        if (!included.length) throw new Error(`No ${crop.label} assets could be read for ${yearVal}.`);
+        const skipped = supported.filter((_, i) => !usable[i]).map(co => co.label);
+        if (skipped.length) note = `Not shown (asset unavailable): ${skipped.join(', ')}`;
+        expression = buildMosaicExpression(included.map(countryExpr));
+      } else {
+        // `countryObj` is null for the yield layer in All countries mode
+        expression = countryExpr(countryObj);
+      }
+      if (isStale()) return;
+      const tileUrl = await fetchGEETileUrl(expression, vis);
       if (isStale()) return;
       const sourceId = `gee-${key}`;
       const layerId  = `gee-layer-${key}`;
@@ -844,7 +799,7 @@ export default function App() {
       });
 
       const next = { enabled: true, opacity: layersRef.current[key].opacity,
-        loading: false, error: null, mapName: null, tileUrl };
+        loading: false, error: null, note, mapName: null, tileUrl };
       layersRef.current = { ...layersRef.current, [key]: next };
       setLayers(prev => ({ ...prev, [key]: next }));
     } catch (err) {
@@ -864,7 +819,7 @@ export default function App() {
       layersRef.current = { ...layersRef.current, [key]: next };
       setLayers(prev => ({ ...prev, [key]: next }));
     }
-  }, [fetchGEETileUrl, addRasterLayer, removeLayerFromMap]);
+  }, [fetchGEETileUrl, isAssetUsable, addRasterLayer, removeLayerFromMap]);
 
   // ── Toggle checkbox ───────────────────────────────────────────────────────
   const handleLayerToggle = useCallback((cropId, typeId, checked) => {
@@ -876,7 +831,7 @@ export default function App() {
     } else {
       removeLayerFromMap(cropId, typeId);
       const next = { ...layersRef.current[key], enabled: false, loading: false, mapName: null, tileUrl: null,
-        error: null, allLayers: undefined };
+        error: null };
       layersRef.current = { ...layersRef.current, [key]: next };
       setLayers(prev => ({ ...prev, [key]: next }));
     }
@@ -888,11 +843,6 @@ export default function App() {
     const key = lkey(cropId, typeId);
     const layerId = `gee-layer-${key}`;
     if (map?.getLayer(layerId)) map.setPaintProperty(layerId, 'raster-opacity', value);
-    // Also update per-country sub-layers (All countries mode)
-    (layersRef.current[key]?.allLayers ?? []).forEach(({ slug }) => {
-      const id = `gee-layer-${key}-${slug}`;
-      if (map?.getLayer(id)) map.setPaintProperty(id, 'raster-opacity', value);
-    });
     const next = { ...layersRef.current[key], opacity: value };
     layersRef.current = { ...layersRef.current, [key]: next };
     setLayers(prev => ({ ...prev, [key]: next }));
@@ -913,7 +863,7 @@ export default function App() {
       if (layersRef.current[key].enabled) {
         removeLayerFromMap(cr.id, lt.id);
         layersRef.current = { ...layersRef.current,
-          [key]: { ...layersRef.current[key], mapName: null, tileUrl: null, allLayers: undefined } };
+          [key]: { ...layersRef.current[key], mapName: null, tileUrl: null } };
         loadLayer(cr.id, lt.id, newCountry, newYear);
       }
     }));
@@ -1121,13 +1071,13 @@ export default function App() {
         if (layersRef.current[key]?.enabled) removeLayerFromMap(cropId, lt.id);
         layersRef.current = { ...layersRef.current,
           [key]: { ...layersRef.current[key], enabled: false, loading: false, mapName: null, tileUrl: null,
-            error: null, allLayers: undefined } };
+            error: null } };
       });
       setLayers(prev => {
         const next = { ...prev };
         cropLayerTypes.forEach(lt => {
           const key = lkey(cropId, lt.id);
-          next[key] = { ...next[key], enabled: false, mapName: null, tileUrl: null, error: null, allLayers: undefined };
+          next[key] = { ...next[key], enabled: false, mapName: null, tileUrl: null, error: null };
         });
         return next;
       });
@@ -1269,6 +1219,8 @@ export default function App() {
                         </span>
                       </label>
                       {s.error && <div className="error-box">{s.error}</div>}
+                      {s.enabled && !s.loading && !s.error && s.note
+                        && <div className="auth-status hint">{s.note}</div>}
                       {s.enabled && !s.loading && (
                         <div className="opacity-row">
                           <span className="opacity-label">Opacity:</span>
