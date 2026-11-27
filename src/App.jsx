@@ -119,10 +119,11 @@ const COUNTRIES = [
   { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                center: [114.7,   4.5], zoom: 8,  bbox: [114.1,  4.0, 115.4,  5.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
   { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8,  bbox: [124.0, -9.5, 127.4, -8.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
   { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10, bbox: [103.6,  1.1, 104.1,  1.5], years: [] },
-  // East Asia — rice and rice intensity (single crop cycle) only, all from k-means
-  { label: 'Japan',       slug: 'japan',       iso: 'JPN', gaul: 'Japan',                            center: [137.0,  37.5], zoom: 5,  bbox: [128.2, 30.4, 146.0, 45.6], years: YEARS, eastAsia: true },
-  { label: 'South Korea', slug: 'south_korea', iso: 'KOR', gaul: 'Republic of Korea',                center: [127.8,  36.0], zoom: 6,  bbox: [125.5, 33.9, 129.8, 38.7], years: YEARS, eastAsia: true },
-  { label: 'North Korea', slug: 'north_korea', iso: 'PRK', gaul: "Dem People's Rep of Korea",        center: [127.2,  40.0], zoom: 6,  bbox: [124.1, 37.5, 130.9, 43.1], years: YEARS, eastAsia: true },
+  // East Asia — rice and rice intensity only, all from k-means.
+  // `maxCycles` caps the intensity values.
+  { label: 'Japan',       slug: 'japan',       iso: 'JPN', gaul: 'Japan',                            center: [137.0,  37.5], zoom: 5,  bbox: [128.2, 30.4, 146.0, 45.6], years: YEARS, eastAsia: true, maxCycles: 1 },
+  { label: 'South Korea', slug: 'south_korea', iso: 'KOR', gaul: 'Republic of Korea',                center: [127.8,  36.0], zoom: 6,  bbox: [125.5, 33.9, 129.8, 38.7], years: YEARS, eastAsia: true, maxCycles: 1 },
+  { label: 'North Korea', slug: 'north_korea', iso: 'PRK', gaul: "Dem People's Rep of Korea",        center: [127.2,  40.0], zoom: 6,  bbox: [124.1, 37.5, 130.9, 43.1], years: YEARS, eastAsia: true, maxCycles: 1 },
   { label: 'Taiwan',      slug: 'taiwan',      iso: 'TWN', gaul: 'Taiwan',                           center: [121.0,  23.7], zoom: 7,  bbox: [120.0, 21.8, 122.1, 25.4], years: YEARS, eastAsia: true },
 ];
 
@@ -140,9 +141,11 @@ const hasData = (cropId, co, year) =>
     && (isRiceCrop(cropId) || (!co.eastAsia && year !== RICE_KMEANS_YEAR));
 
 // How to read a k-means asset; null for every other asset.
-// `threshold` turns the intensity band into a rice mask (intensity > 0).
+// `threshold` turns the intensity band into a rice mask (intensity > 0);
+// `cap` limits intensity to the country's `maxCycles`.
 const kmeansSource = (cropId, co, year) => isRiceKmeans(cropId, co, year)
-  ? { band: RICE_KMEANS_BAND, threshold: cropId === 'rice' }
+  ? { band: RICE_KMEANS_BAND, threshold: cropId === 'rice',
+      cap: cropId === 'rice_intensity' ? co?.maxCycles : undefined }
   : null;
 
 // Full asset id for a crop + layer type.
@@ -160,11 +163,10 @@ function layerVis(lt, crop, co, year) {
   return lt.vis;
 }
 
-// Legend classes for discrete layers. East Asia has only one crop cycle.
+// Legend classes for discrete layers.
 function layerDiscreteSwatches(lt, co, year) {
-  if (lt.id !== 'Intensity') return lt.legendSwatches;
-  if (co?.eastAsia) return RICE_KMEANS_INTENSITY_SWATCHES.slice(0, 1);
-  return year === RICE_KMEANS_YEAR ? RICE_KMEANS_INTENSITY_SWATCHES : lt.legendSwatches;
+  if (lt.id !== 'Intensity' || !(co?.eastAsia || year === RICE_KMEANS_YEAR)) return lt.legendSwatches;
+  return RICE_KMEANS_INTENSITY_SWATCHES.slice(0, co?.maxCycles);
 }
 
 // Crop-aware legend swatches for the binary layer.
@@ -355,6 +357,18 @@ function selectBand(imageExpr, band) {
   };
 }
 
+function capAt(imageExpr, max) {
+  return {
+    functionInvocationValue: {
+      functionName: 'Image.min',
+      arguments: {
+        image1: imageExpr,
+        image2: { functionInvocationValue: { functionName: 'Image.constant', arguments: { value: { constantValue: max } } } },
+      },
+    },
+  };
+}
+
 function greaterThanZero(imageExpr) {
   return {
     functionInvocationValue: {
@@ -368,7 +382,7 @@ function greaterThanZero(imageExpr) {
 }
 
 // `geom` is a geometry/collection expression; `yieldYear` is set only for yield layers,
-// `source` ({ band, threshold }) only for multiband assets that need a single band picked.
+// `source` ({ band, threshold, cap }) only for multiband assets that need a single band picked.
 function buildExpression(assetPath, geom, isBinary, isSelfMask, unmask, yieldYear, source) {
   const loadExpr = {
     functionInvocationValue: {
@@ -378,6 +392,7 @@ function buildExpression(assetPath, geom, isBinary, isSelfMask, unmask, yieldYea
   };
   let bandExpr = source ? selectBand(loadExpr, source.band) : loadExpr;
   if (source?.threshold) bandExpr = greaterThanZero(bandExpr);
+  if (source?.cap) bandExpr = capAt(bandExpr, source.cap);
   const imgExpr  = yieldYear
     ? buildYieldImage(loadExpr, yieldYear)
     : applyMaskToExpr(bandExpr, isBinary, isSelfMask);
@@ -771,15 +786,12 @@ export default function App() {
         lt.isBinary, lt.isSelfMask, lt.unmask,
         lt.isYield ? yearVal : null, kmeansSource(cropId, co, yearVal));
       let expression;
-      let note = null;
       if (isAll && !lt.isYield) {
         // All countries: one server-side mosaic of every country with a usable asset
         const usable = await Promise.all(supported.map(co =>
           isAssetUsable(assetId(crop, lt, co, yearVal), kmeansSource(cropId, co, yearVal)?.band)));
         const included = supported.filter((_, i) => usable[i]);
         if (!included.length) throw new Error(`No ${crop.label} assets could be read for ${yearVal}.`);
-        const skipped = supported.filter((_, i) => !usable[i]).map(co => co.label);
-        if (skipped.length) note = `Not shown (asset unavailable): ${skipped.join(', ')}`;
         expression = buildMosaicExpression(included.map(countryExpr));
       } else {
         // `countryObj` is null for the yield layer in All countries mode
@@ -799,7 +811,7 @@ export default function App() {
       });
 
       const next = { enabled: true, opacity: layersRef.current[key].opacity,
-        loading: false, error: null, note, mapName: null, tileUrl };
+        loading: false, error: null, mapName: null, tileUrl };
       layersRef.current = { ...layersRef.current, [key]: next };
       setLayers(prev => ({ ...prev, [key]: next }));
     } catch (err) {
@@ -1219,8 +1231,6 @@ export default function App() {
                         </span>
                       </label>
                       {s.error && <div className="error-box">{s.error}</div>}
-                      {s.enabled && !s.loading && !s.error && s.note
-                        && <div className="auth-status hint">{s.note}</div>}
                       {s.enabled && !s.loading && (
                         <div className="opacity-row">
                           <span className="opacity-label">Opacity:</span>
