@@ -120,13 +120,31 @@ const COUNTRIES = [
   { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8,  bbox: [124.0, -9.5, 127.4, -8.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
   { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10, bbox: [103.6,  1.1, 104.1,  1.5], years: [] },
   // East Asia — rice and rice intensity (single crop cycle) only, all from k-means
-  { label: 'Japan',       slug: 'japan',       iso: 'JPN', gaul: 'Japan',                            center: [137.0,  37.5], zoom: 5,  bbox: [128.2, 30.4, 146.0, 45.6], years: YEARS, eastAsia: true },
+  { label: 'Japan',       slug: 'japan',       iso: 'JPN', gaul: 'Japan',                            center: [137.0,  37.5], zoom: 5,  bbox: [128.2, 30.4, 146.0, 45.6], years: YEARS, eastAsia: true, tileBounds: [122.5, 23.5, 154.5, 46.5] },
   { label: 'South Korea', slug: 'south_korea', iso: 'KOR', gaul: 'Republic of Korea',                center: [127.8,  36.0], zoom: 6,  bbox: [125.5, 33.9, 129.8, 38.7], years: YEARS, eastAsia: true },
   { label: 'North Korea', slug: 'north_korea', iso: 'PRK', gaul: "Dem People's Rep of Korea",        center: [127.2,  40.0], zoom: 6,  bbox: [124.1, 37.5, 130.9, 43.1], years: YEARS, eastAsia: true },
-  { label: 'Taiwan',      slug: 'taiwan',      iso: 'TWN', gaul: 'Taiwan',                           center: [121.0,  23.7], zoom: 7,  bbox: [120.0, 21.8, 122.1, 25.4], years: YEARS, eastAsia: true },
+  { label: 'Taiwan',      slug: 'taiwan',      iso: 'TWN', gaul: 'Taiwan',                           center: [121.0,  23.7], zoom: 7,  bbox: [120.0, 21.8, 122.1, 25.4], years: YEARS, eastAsia: true, tileBounds: [118.0, 20.5, 123.5, 26.8] },
 ];
 
 const BOUNDARY_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
+
+// Longest time "All countries" layers stay hidden while waiting for slow tiles.
+const REVEAL_TIMEOUT_MS = 30000;
+
+// Area a country's tiles are requested for in "All countries" mode: its bbox plus a
+// 1° margin, unless `tileBounds` is set for outlying islands the bbox leaves out.
+const tileBoundsFor = ({ tileBounds, bbox: [w, s, e, n] }) =>
+  tileBounds ?? [w - 1, s - 1, e + 1, n + 1];
+
+// Resolves once the map has no tiles left to load, or after the time limit.
+function waitForMapIdle(map) {
+  return new Promise(resolve => {
+    const done = () => { clearTimeout(timer); map.off('idle', done); resolve(); };
+    const timer = setTimeout(done, REVEAL_TIMEOUT_MS);
+    map.on('idle', done);
+    map.triggerRepaint();
+  });
+}
 
 const isRiceCrop = (cropId) => cropId === 'rice' || cropId === 'rice_intensity';
 
@@ -480,6 +498,8 @@ export default function App() {
   const boundaryTilesRef  = useRef({ country: null, sea: null });
   // Request counter — ensures only the latest country boundary request is applied
   const boundaryReqRef    = useRef(0);
+  // Per-layer load counter — a load is dropped once its layer is removed or reloaded
+  const layerReqRef       = useRef({});
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [country,     setCountry]     = useState(ALL_LABEL);
@@ -526,10 +546,11 @@ export default function App() {
   }, []);
 
   // ── Add a raster tile layer to the map ───────────────────────────────────
-  const addRasterLayer = useCallback((map, sourceId, layerId, tileUrl, opacity = 1) => {
+  const addRasterLayer = useCallback((map, sourceId, layerId, tileUrl, opacity = 1, bounds) => {
     if (map.getLayer(layerId))   map.removeLayer(layerId);
     if (map.getSource(sourceId)) map.removeSource(sourceId);
-    map.addSource(sourceId, { type: 'raster', tiles: [tileUrl], tileSize: 256 });
+    map.addSource(sourceId, { type: 'raster', tiles: [tileUrl], tileSize: 256,
+      ...(bounds && { bounds }) });
     map.addLayer({ id: layerId, type: 'raster', source: sourceId,
       paint: { 'raster-opacity': opacity } });
   }, []);
@@ -612,12 +633,12 @@ export default function App() {
             paint: { 'raster-opacity': s.enabled ? s.opacity : 0 } });
         }
         // Restore per-country sub-layers (All countries mode)
-        (s.allLayers ?? []).forEach(({ slug, tileUrl }) => {
+        (s.allLayers ?? []).forEach(({ slug, tileUrl, bounds }) => {
           const srcId = `gee-${key}-${slug}`;
           const lyrId = `gee-layer-${key}-${slug}`;
-          map.addSource(srcId, { type: 'raster', tiles: [tileUrl], tileSize: 256 });
+          map.addSource(srcId, { type: 'raster', tiles: [tileUrl], tileSize: 256, bounds });
           map.addLayer({ id: lyrId, type: 'raster', source: srcId,
-            paint: { 'raster-opacity': s.enabled ? s.opacity : 0 } });
+            paint: { 'raster-opacity': s.enabled && !s.hidden ? s.opacity : 0 } });
         });
       }));
       // Restore boundaries
@@ -704,6 +725,7 @@ export default function App() {
     const map = mapRef.current;
     if (!map) return;
     const key = lkey(cropId, typeId);
+    layerReqRef.current[key] = (layerReqRef.current[key] ?? 0) + 1;  // cancel any pending load
     // Remove single-country layer
     if (map.getLayer(`gee-layer-${key}`)) map.removeLayer(`gee-layer-${key}`);
     if (map.getSource(`gee-${key}`))      map.removeSource(`gee-${key}`);
@@ -740,6 +762,10 @@ export default function App() {
       return;
     }
 
+    const reqId = (layerReqRef.current[key] ?? 0) + 1;
+    layerReqRef.current[key] = reqId;
+    const isStale = () => layerReqRef.current[key] !== reqId;
+
     setLayers(prev => ({ ...prev, [key]: { ...prev[key], loading: true, error: null } }));
 
     if (isAll && !lt.isYield) {
@@ -749,7 +775,7 @@ export default function App() {
             const expr = buildExpression(assetId(crop, lt, co, yearVal), buildCountryFilter(co.gaul), lt.isBinary, lt.isSelfMask, lt.unmask, null,
               kmeansSource(cropId, co, yearVal));
             const tileUrl = await fetchGEETileUrl(expr, layerVis(lt, crop, co, yearVal));
-            return { slug: co.slug, tileUrl };
+            return { slug: co.slug, tileUrl, bounds: tileBoundsFor(co) };
           } catch (err) {
             const msg = err.message?.toLowerCase() ?? '';
             // Only skip missing assets — re-throw auth/project/expression errors
@@ -757,19 +783,30 @@ export default function App() {
             throw err;
           }
         }));
+        if (isStale()) return;
         const loaded = results.filter(Boolean);
-        const opacity = layersRef.current[key].opacity;
-        loaded.forEach(({ slug, tileUrl }) => {
-          addRasterLayer(map, `gee-${key}-${slug}`, `gee-layer-${key}-${slug}`, tileUrl, opacity);
+        // Add every country hidden, then reveal them together once tiles are in
+        loaded.forEach(({ slug, tileUrl, bounds }) => {
+          addRasterLayer(map, `gee-${key}-${slug}`, `gee-layer-${key}-${slug}`, tileUrl, 0, bounds);
         });
         ['boundary-layer-sea', 'boundary-layer-country'].forEach(id => {
           if (map.getLayer(id)) map.moveLayer(id);
+        });
+        layersRef.current = { ...layersRef.current,
+          [key]: { ...layersRef.current[key], allLayers: loaded, hidden: true } };
+        if (loaded.length) await waitForMapIdle(map);
+        if (isStale()) return;
+        const { opacity } = layersRef.current[key];
+        loaded.forEach(({ slug }) => {
+          const id = `gee-layer-${key}-${slug}`;
+          if (map.getLayer(id)) map.setPaintProperty(id, 'raster-opacity', opacity);
         });
         const next = { enabled: true, opacity, loading: false, error: null, mapName: null, tileUrl: null,
           allLayers: loaded };
         layersRef.current = { ...layersRef.current, [key]: next };
         setLayers(prev => ({ ...prev, [key]: next }));
       } catch (err) {
+        if (isStale()) return;
         const msg = err.message?.toLowerCase() ?? '';
         let friendly;
         if (msg.includes('permission') || msg.includes('serviceusage') || msg.includes('caller does not have')
@@ -795,6 +832,7 @@ export default function App() {
           lt.isYield ? yearVal : null, kmeansSource(cropId, countryObj, yearVal)),
         vis,
       );
+      if (isStale()) return;
       const sourceId = `gee-${key}`;
       const layerId  = `gee-layer-${key}`;
 
@@ -810,6 +848,7 @@ export default function App() {
       layersRef.current = { ...layersRef.current, [key]: next };
       setLayers(prev => ({ ...prev, [key]: next }));
     } catch (err) {
+      if (isStale()) return;
       const msg = err.message?.toLowerCase() ?? '';
       let friendly;
       if (msg.includes('permission') || msg.includes('serviceusage') || msg.includes('caller does not have')
@@ -836,7 +875,8 @@ export default function App() {
       loadLayer(cropId, typeId, country, year);
     } else {
       removeLayerFromMap(cropId, typeId);
-      const next = { ...layersRef.current[key], enabled: false, mapName: null, tileUrl: null, error: null };
+      const next = { ...layersRef.current[key], enabled: false, loading: false, mapName: null, tileUrl: null,
+        error: null, allLayers: undefined };
       layersRef.current = { ...layersRef.current, [key]: next };
       setLayers(prev => ({ ...prev, [key]: next }));
     }
@@ -872,7 +912,8 @@ export default function App() {
       const key = lkey(cr.id, lt.id);
       if (layersRef.current[key].enabled) {
         removeLayerFromMap(cr.id, lt.id);
-        layersRef.current = { ...layersRef.current, [key]: { ...layersRef.current[key], mapName: null, tileUrl: null } };
+        layersRef.current = { ...layersRef.current,
+          [key]: { ...layersRef.current[key], mapName: null, tileUrl: null, allLayers: undefined } };
         loadLayer(cr.id, lt.id, newCountry, newYear);
       }
     }));
@@ -1079,7 +1120,8 @@ export default function App() {
         const key = lkey(cropId, lt.id);
         if (layersRef.current[key]?.enabled) removeLayerFromMap(cropId, lt.id);
         layersRef.current = { ...layersRef.current,
-          [key]: { ...layersRef.current[key], enabled: false, mapName: null, tileUrl: null, error: null, allLayers: undefined } };
+          [key]: { ...layersRef.current[key], enabled: false, loading: false, mapName: null, tileUrl: null,
+            error: null, allLayers: undefined } };
       });
       setLayers(prev => {
         const next = { ...prev };
