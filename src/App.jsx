@@ -79,9 +79,10 @@ const YIELD_LAYER_TYPES = [
   },
 ];
 
-// Rice 2026 (k-means method): one asset per country, read from its `intensity` band
-// (0 = non-rice, else crop cycles); rice = intensity > 0.
-// To add a country, append '2026' to its `years` in COUNTRIES.
+// Rice (k-means method): one asset per country/year, read from its `intensity` band
+// (0 = non-rice, else crop cycles); rice = intensity > 0. Used for East Asia in
+// every year, and for any other country in 2026.
+// To add a country for 2026, append '2026' to its `years` in COUNTRIES.
 const RICE_KMEANS_YEAR = '2026';
 const RICE_KMEANS_PREFIX = 'projects/tony-1122/assets/NIE/rice_kmeans_method/';
 const RICE_KMEANS_BAND = 'intensity';
@@ -105,6 +106,7 @@ const CROP_BY_ID = Object.fromEntries(CROPS.map(c => [c.id, c]));
 // Composite key identifying a crop + layer type on the map and in layer state.
 const lkey = (cropId, typeId) => `${cropId}-${typeId}`;
 const GEE_API      = 'https://earthengine.googleapis.com/v1';
+const YEARS = ['2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026'];
 const COUNTRIES = [
   { label: 'Thailand',    slug: 'thailand',    iso: 'THA', gaul: 'Thailand',                         center: [100.5,  13.5], zoom: 5,  bbox: [ 97.3,  5.5, 105.7, 20.5], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026'] },
   { label: 'Myanmar',     slug: 'myanmar',     iso: 'MMR', gaul: 'Myanmar',                          center: [ 96.0,  19.0], zoom: 5,  bbox: [ 92.1,  9.6, 101.2, 28.5], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
@@ -117,56 +119,58 @@ const COUNTRIES = [
   { label: 'Brunei',      slug: 'brunei',      iso: 'BRN', gaul: 'Brunei Darussalam',                center: [114.7,   4.5], zoom: 8,  bbox: [114.1,  4.0, 115.4,  5.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
   { label: 'Timor-Leste', slug: 'timor',       iso: 'TLS', gaul: 'Timor-Leste',                      center: [125.5,  -8.8], zoom: 8,  bbox: [124.0, -9.5, 127.4, -8.1], years: ['2019', '2020', '2021', '2022', '2023', '2024', '2025'] },
   { label: 'Singapore',   slug: 'singapore',   iso: 'SGP', gaul: 'Singapore',                        center: [103.8,   1.35], zoom: 10, bbox: [103.6,  1.1, 104.1,  1.5], years: [] },
-  // East Asia — rice and rice intensity (single crop cycle), 2026
-  { label: 'Japan',       slug: 'japan',       iso: 'JPN', gaul: 'Japan',                            center: [137.0,  37.5], zoom: 5,  bbox: [128.2, 30.4, 146.0, 45.6], years: ['2026'], eastAsia: true },
-  { label: 'South Korea', slug: 'south_korea', iso: 'KOR', gaul: 'Republic of Korea',                center: [127.8,  36.0], zoom: 6,  bbox: [125.5, 33.9, 129.8, 38.7], years: ['2026'], eastAsia: true },
-  { label: 'North Korea', slug: 'north_korea', iso: 'PRK', gaul: "Dem People's Rep of Korea",        center: [127.2,  40.0], zoom: 6,  bbox: [124.1, 37.5, 130.9, 43.1], years: ['2026'], eastAsia: true },
-  { label: 'Taiwan',      slug: 'taiwan',      iso: 'TWN', gaul: 'Taiwan',                           center: [121.0,  23.7], zoom: 7,  bbox: [120.0, 21.8, 122.1, 25.4], years: ['2026'], eastAsia: true },
+  // East Asia — rice and rice intensity (single crop cycle) only, all from k-means
+  { label: 'Japan',       slug: 'japan',       iso: 'JPN', gaul: 'Japan',                            center: [137.0,  37.5], zoom: 5,  bbox: [128.2, 30.4, 146.0, 45.6], years: YEARS, eastAsia: true },
+  { label: 'South Korea', slug: 'south_korea', iso: 'KOR', gaul: 'Republic of Korea',                center: [127.8,  36.0], zoom: 6,  bbox: [125.5, 33.9, 129.8, 38.7], years: YEARS, eastAsia: true },
+  { label: 'North Korea', slug: 'north_korea', iso: 'PRK', gaul: "Dem People's Rep of Korea",        center: [127.2,  40.0], zoom: 6,  bbox: [124.1, 37.5, 130.9, 43.1], years: YEARS, eastAsia: true },
+  { label: 'Taiwan',      slug: 'taiwan',      iso: 'TWN', gaul: 'Taiwan',                           center: [121.0,  23.7], zoom: 7,  bbox: [120.0, 21.8, 122.1, 25.4], years: YEARS, eastAsia: true },
 ];
 
 const BOUNDARY_GAUL_NAMES = COUNTRIES.map(c => c.gaul);
 
-const YEARS = ['2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026'];
+const isRiceCrop = (cropId) => cropId === 'rice' || cropId === 'rice_intensity';
 
-const isRiceKmeans = (cropId, year) =>
-  (cropId === 'rice' || cropId === 'rice_intensity') && year === RICE_KMEANS_YEAR;
+// `co` is undefined in "All countries" mode.
+const isRiceKmeans = (cropId, co, year) =>
+  isRiceCrop(cropId) && (!!co?.eastAsia || year === RICE_KMEANS_YEAR);
 
-// 2026 data exists for rice and rice intensity only.
+// East Asia and 2026 have data for rice and rice intensity only.
 const hasData = (cropId, co, year) =>
-  co.years.includes(year) && (year !== RICE_KMEANS_YEAR || isRiceKmeans(cropId, year));
+  co.years.includes(year)
+    && (isRiceCrop(cropId) || (!co.eastAsia && year !== RICE_KMEANS_YEAR));
 
-// How to read a 2026 k-means asset; null for every other crop/year.
+// How to read a k-means asset; null for every other asset.
 // `threshold` turns the intensity band into a rice mask (intensity > 0).
-const kmeansSource = (cropId, year) => isRiceKmeans(cropId, year)
+const kmeansSource = (cropId, co, year) => isRiceKmeans(cropId, co, year)
   ? { band: RICE_KMEANS_BAND, threshold: cropId === 'rice' }
   : null;
 
 // Full asset id for a crop + layer type.
-const assetId = (crop, lt, slug, year) => isRiceKmeans(crop.id, year)
-  ? `${RICE_KMEANS_PREFIX}rice_${slug}_${year}`
-  : `${crop.prefix}${lt.assetName(slug, year)}`;
+const assetId = (crop, lt, co, year) => isRiceKmeans(crop.id, co, year)
+  ? `${RICE_KMEANS_PREFIX}rice_${co.slug}_${year}`
+  : `${crop.prefix}${lt.assetName(co?.slug, year)}`;
 
 // Crop-aware visualisation — the binary layer is coloured per crop
 // (rice → green, corn → yellow); other layers share one palette.
-function layerVis(lt, crop, year) {
-  if (lt.id === 'Intensity' && year === RICE_KMEANS_YEAR) return RICE_KMEANS_INTENSITY_VIS;
+function layerVis(lt, crop, co, year) {
+  if (lt.id === 'Intensity' && isRiceKmeans(crop.id, co, year)) return RICE_KMEANS_INTENSITY_VIS;
   if (lt.id === 'Binary') {
     return { ranges: [{ min: 0, max: 1 }], paletteColors: ['000000', crop.binaryColor] };
   }
   return lt.vis;
 }
 
-// Legend classes for discrete layers. East Asia has only one crop cycle in 2026.
-function layerDiscreteSwatches(lt, countryLabel, year) {
-  if (lt.id !== 'Intensity' || year !== RICE_KMEANS_YEAR) return lt.legendSwatches;
-  const eastAsia = COUNTRIES.find(c => c.label === countryLabel)?.eastAsia;
-  return eastAsia ? RICE_KMEANS_INTENSITY_SWATCHES.slice(0, 1) : RICE_KMEANS_INTENSITY_SWATCHES;
+// Legend classes for discrete layers. East Asia has only one crop cycle.
+function layerDiscreteSwatches(lt, co, year) {
+  if (lt.id !== 'Intensity') return lt.legendSwatches;
+  if (co?.eastAsia) return RICE_KMEANS_INTENSITY_SWATCHES.slice(0, 1);
+  return year === RICE_KMEANS_YEAR ? RICE_KMEANS_INTENSITY_SWATCHES : lt.legendSwatches;
 }
 
 // Crop-aware legend swatches for the binary layer.
 // Only the "crop present" class is shown; the masked / non-crop class is omitted.
-function layerLegendSwatches(lt, crop, year) {
-  const label = isRiceKmeans(crop.id, year) ? crop.label : `${crop.label} (prob ≥ 50%)`;
+function layerLegendSwatches(lt, crop, co, year) {
+  const label = isRiceKmeans(crop.id, co, year) ? crop.label : `${crop.label} (prob ≥ 50%)`;
   return [
     { color: `#${crop.binaryColor}`, label },
   ];
@@ -423,7 +427,7 @@ function buildMosaicExpression(crop, lt, yearVal, isBinary, isSelfMask, unmask) 
     const loadExpr = {
       functionInvocationValue: {
         functionName: 'Image.load',
-        arguments: { id: { constantValue: assetId(crop, lt, co.slug, yearVal) } },
+        arguments: { id: { constantValue: assetId(crop, lt, co, yearVal) } },
       },
     };
     return applyMaskToExpr(loadExpr, isBinary, isSelfMask, unmask);
@@ -722,7 +726,7 @@ export default function App() {
     const isAll      = countryVal === ALL_LABEL;
     const countryObj = isAll ? null : COUNTRIES.find(c => c.label === countryVal);
     if (!crop || !lt || (!isAll && !countryObj)) return;
-    const vis = layerVis(lt, crop, yearVal);
+    const vis = layerVis(lt, crop, countryObj, yearVal);
 
     // Skip requests for crop/country/year combinations with no data (this also stops
     // the yield layer from deriving a 2026 value from earlier bands).
@@ -742,9 +746,9 @@ export default function App() {
       try {
         const results = await Promise.all(supported.map(async co => {
           try {
-            const expr = buildExpression(assetId(crop, lt, co.slug, yearVal), buildCountryFilter(co.gaul), lt.isBinary, lt.isSelfMask, lt.unmask, null,
-              kmeansSource(cropId, yearVal));
-            const tileUrl = await fetchGEETileUrl(expr, vis);
+            const expr = buildExpression(assetId(crop, lt, co, yearVal), buildCountryFilter(co.gaul), lt.isBinary, lt.isSelfMask, lt.unmask, null,
+              kmeansSource(cropId, co, yearVal));
+            const tileUrl = await fetchGEETileUrl(expr, layerVis(lt, crop, co, yearVal));
             return { slug: co.slug, tileUrl };
           } catch (err) {
             const msg = err.message?.toLowerCase() ?? '';
@@ -785,10 +789,10 @@ export default function App() {
     try {
       const tileUrl  = await fetchGEETileUrl(
         buildExpression(
-          assetId(crop, lt, countryObj?.slug, yearVal),
+          assetId(crop, lt, countryObj, yearVal),
           isAll ? buildAllCountriesFilter() : buildCountryFilter(countryObj.gaul),
           lt.isBinary, lt.isSelfMask, lt.unmask,
-          lt.isYield ? yearVal : null, kmeansSource(cropId, yearVal)),
+          lt.isYield ? yearVal : null, kmeansSource(cropId, countryObj, yearVal)),
         vis,
       );
       const sourceId = `gee-${key}`;
@@ -1320,7 +1324,7 @@ export default function App() {
                 .map(lt => (
                   <div key={lkey(cr.id, lt.id)} className="legend-item">
                     <div className="legend-type-label" style={{ color: `#${cr.binaryColor}` }}>{cr.label} · {lt.label}</div>
-                    {layerLegendSwatches(lt, cr, year).map((sw, i) => (
+                    {layerLegendSwatches(lt, cr, COUNTRIES.find(c => c.label === country), year).map((sw, i) => (
                       <div key={i} className="legend-swatch-row">
                         <div className="legend-swatch" style={{ background: sw.color }} />
                         <span className="legend-swatch-label">{sw.label}</span>
@@ -1337,7 +1341,7 @@ export default function App() {
                 .map(lt => (
                   <div key={lkey(cr.id, lt.id)} className="legend-item">
                     <div className="legend-type-label" style={{ color: lt.color }}>{cr.label} · {lt.label}</div>
-                    {layerDiscreteSwatches(lt, country, year).map((sw, i) => (
+                    {layerDiscreteSwatches(lt, COUNTRIES.find(c => c.label === country), year).map((sw, i) => (
                       <div key={i} className="legend-swatch-row">
                         <div className="legend-swatch" style={{ background: sw.color }} />
                         <span className="legend-swatch-label">{sw.label}</span>
