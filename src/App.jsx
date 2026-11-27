@@ -86,7 +86,8 @@ const YIELD_LAYER_TYPES = [
 const RICE_KMEANS_YEAR = '2026';
 const RICE_KMEANS_PREFIX = 'projects/tony-1122/assets/NIE/rice_kmeans_method/';
 const RICE_KMEANS_BAND = 'intensity';
-const RICE_KMEANS_INTENSITY_VIS = { ranges: [{ min: 0, max: 2 }], paletteColors: ['ffffff', '00ff00', 'ffff00'] };
+// Starts at 1 (0 is masked), so zoomed-out pixels below 1 stay green rather than white.
+const RICE_KMEANS_INTENSITY_VIS = { ranges: [{ min: 1, max: 2 }], paletteColors: ['00ff00', 'ffff00'] };
 const RICE_KMEANS_INTENSITY_SWATCHES = [
   { color: '#00ff00', label: '1 cycle' },
   { color: '#ffff00', label: '2 cycles' },
@@ -437,11 +438,12 @@ function buildExpression(assetPath, geom, isBinary, isSelfMask, unmask, yieldYea
 }
 
 // Merges per-country expressions (from `buildExpression`) into one image. Assets
-// name their bands differently, so each is reduced to one byte band called `v`.
+// name their bands differently, so each is reduced to one float band called `v`.
+// Float keeps the fractional values of zoomed-out pixels from being truncated.
 function buildMosaicExpression(expressions) {
   const normalise = (expr) => ({
     functionInvocationValue: {
-      functionName: 'Image.toByte',
+      functionName: 'Image.toFloat',
       arguments: {
         value: {
           functionInvocationValue: {
