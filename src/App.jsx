@@ -85,9 +85,9 @@ const YIELD_LAYER_TYPES = [
 const RICE_KMEANS_YEAR = '2026';
 const RICE_KMEANS_PREFIX = 'projects/tony-1122/assets/NIE/rice_kmeans_method/';
 const RICE_KMEANS_BAND = 'intensity';
-const RICE_KMEANS_INTENSITY_VIS = { ranges: [{ min: 0, max: 2 }], paletteColors: ['ffffff', '008000', 'ffff00'] };
+const RICE_KMEANS_INTENSITY_VIS = { ranges: [{ min: 0, max: 2 }], paletteColors: ['ffffff', '00ff00', 'ffff00'] };
 const RICE_KMEANS_INTENSITY_SWATCHES = [
-  { color: '#008000', label: '1 cycle' },
+  { color: '#00ff00', label: '1 cycle' },
   { color: '#ffff00', label: '2 cycles' },
 ];
 
